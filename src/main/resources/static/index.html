@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>RideMate</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --primary: #0088cc;
+            --primary-dark: #006699;
+            --passenger: #4CAF50;
+            --driver: #2196F3;
+            --bg: #f0f2f5;
+            --card-bg: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #606770;
+            --border: #e0e0e0;
+            --shadow: 0 2px 8px rgba(0,0,0,0.08);
+            --radius: 16px;
+            --nav-height: 64px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 430px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            padding-bottom: calc(var(--nav-height) + 20px);
+        }
+
+        .header {
+            background: white;
+            padding: 16px;
+            box-shadow: var(--shadow);
+            border-radius: 0 0 var(--radius) var(--radius);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header .greeting { font-size: 18px; font-weight: 600; }
+
+        .role-badge {
+            background: #e8f4f8;
+            color: var(--primary-dark);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .role-badge.passenger { background: #e8f5e9; color: var(--passenger); }
+        .role-badge.driver { background: #e3f2fd; color: var(--driver); }
+
+        .screen { display: none; padding: 0 16px; }
+        .screen.active { display: block; }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .card h3 { font-size: 18px; margin-bottom: 12px; }
+
+        .field { margin-bottom: 12px; }
+        .field label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
+
+        input[type="text"], input[type="datetime-local"], input[type="number"], textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 16px;
+            background: #fafafa;
+            transition: border-color 0.2s;
+        }
+        input:focus, textarea:focus { outline: none; border-color: var(--primary); background: #fff; }
+        textarea { resize: vertical; min-height: 80px; }
+
+        select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 16px;
+            background: #fafafa;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn:active { background: var(--primary-dark); }
+        .btn-secondary { background: #e0e0e0; color: var(--text-primary); font-weight: 500; }
+        .btn-secondary:active { background: #d0d0d0; }
+        .btn-sm {
+            padding: 8px 12px;
+            font-size: 14px;
+            border-radius: 8px;
+            width: auto;
+            display: inline-block;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+
+        .active-tab {
+            background: var(--primary) !important;
+            color: white;
+        }
+
+        .search-results { margin-top: 8px; }
+        .search-item {
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        .search-item:hover { background: #f0f8ff; border-color: var(--primary); }
+        .search-item .place-name { font-weight: 500; }
+        .search-item .coords { font-size: 12px; color: var(--text-secondary); }
+
+        .selected-place {
+            background: #e8f4f8;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin: 8px 0;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .ride-list .ride-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow);
+        }
+        .ride-card .ride-header { display: flex; align-items: center; margin-bottom: 8px; }
+        .ride-card .role-icon { font-size: 20px; margin-right: 8px; }
+        .ride-card .role-name { font-weight: 600; flex: 1; }
+        .ride-card .status-badge {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 20px;
+            background: #f0f0f0;
+            color: var(--text-secondary);
+        }
+        .status-badge.active { background: #e8f5e9; color: #2e7d32; }
+        .status-badge.cancelled { background: #ffebee; color: #c62828; }
+        .status-badge.matched { background: #e3f2fd; color: #1565c0; }
+        .status-badge.completed { background: #e8f5e9; color: #2e7d32; }
+        .status-badge.expired { background: #f5f5f5; color: #999; }
+        .ride-card .route { font-size: 14px; color: var(--text-secondary); margin-bottom: 6px; }
+        .ride-card .time { font-size: 12px; color: #999; }
+        .ride-card .details { font-size: 14px; margin: 4px 0; }
+        .ride-card .actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+
+        .match-item {
+            padding: 14px;
+            border-bottom: 1px solid var(--border);
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            box-shadow: var(--shadow);
+        }
+        .match-item:last-child { border-bottom: none; margin-bottom: 0; }
+        .match-item .responder { font-weight: 600; }
+        .match-status {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 20px;
+            background: #f0f0f0;
+            display: inline-block;
+            margin-top: 4px;
+        }
+        .match-status.pending { background: #fff8e1; color: #f57f17; }
+        .match-status.accepted { background: #e8f5e9; color: #2e7d32; }
+        .match-status.rejected { background: #ffebee; color: #c62828; }
+        .match-status.completed { background: #e8f5e9; color: #2e7d32; }
+
+        .chat-message {
+            padding: 8px;
+            margin-bottom: 8px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .chat-message .sender { font-weight: bold; margin-right: 8px; }
+        .chat-message .text { word-wrap: break-word; }
+        .chat-message .time { font-size: 11px; color: #999; margin-left: 8px; }
+
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 430px;
+            background: white;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            height: var(--nav-height);
+            border-radius: 20px 20px 0 0;
+            z-index: 100;
+        }
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            transition: color 0.2s;
+        }
+        .nav-item.active { color: var(--primary); }
+        .nav-item .icon { font-size: 22px; margin-bottom: 2px; }
+
+        .hidden { display: none !important; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: white;
+            padding: 16px;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 400px;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; }
+        #mapContainer { height: 300px; border-radius: 8px; }
+
+        .stars { display: flex; justify-content: center; gap: 8px; margin-bottom: 12px; }
+        .star { font-size: 32px; cursor: pointer; color: #ccc; transition: color 0.2s; }
+        .star.active { color: #ffc107; }
+
+        #chatWindow .btn-secondary { width: auto; padding: 8px 12px; font-size: 14px; }
+        #messageInput { flex: 1; }
+
+        #profileInfo p { margin-bottom: 8px; }
+        .vehicle-info { font-size: 14px; margin: 4px 0; color: var(--text-secondary); }
+        .score { font-weight: 600; color: #ff6f00; margin: 4px 0; }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <div class="header">
+        <div class="greeting" id="greetingText">Привет!</div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <div class="role-badge hidden" id="roleBadge">🚶 Пассажир</div>
+            <span onclick="openProfileModal()" style="cursor:pointer; font-size:24px;">👤</span>
+        </div>
+    </div>
+
+    <div id="roleSelection" class="screen active">
+        <div class="card" style="text-align: center;">
+            <h3>Кто вы?</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">Выберите вашу роль, чтобы начать</p>
+            <button class="btn" style="margin-bottom: 12px; background: var(--passenger);" onclick="selectRole('PASSENGER')">🚶 Я пассажир</button>
+            <button class="btn" style="background: var(--driver);" onclick="selectRole('DRIVER')">🚗 Я водитель</button>
+        </div>
+    </div>
+
+    <div id="createScreen" class="screen">
+        <div class="card">
+            <h3>Создать заявку</h3>
+            <div class="field">
+                <label>Откуда</label>
+                <input type="text" id="fromInput" placeholder="Например: Минск">
+                <button class="btn btn-secondary btn-sm" onclick="searchPlace('from')">🔍 Найти</button>
+                <button class="btn btn-secondary btn-sm" onclick="openMapModal('from')">🗺️ На карте</button>
+                <div class="search-results" id="fromResults"></div>
+                <div class="selected-place hidden" id="fromSelected"></div>
+            </div>
+            <div class="field">
+                <label>Куда</label>
+                <input type="text" id="toInput" placeholder="Например: Гродно">
+                <button class="btn btn-secondary btn-sm" onclick="searchPlace('to')">🔍 Найти</button>
+                <button class="btn btn-secondary btn-sm" onclick="openMapModal('to')">🗺️ На карте</button>
+                <div class="search-results" id="toResults"></div>
+                <div class="selected-place hidden" id="toSelected"></div>
+            </div>
+            <div class="field">
+                <label>Дата и время отправления</label>
+                <input type="datetime-local" id="departureTimeInput">
+            </div>
+            <div class="field">
+                <label>Количество пассажиров</label>
+                <select id="passengerCountSelect">
+                    <option value="1">1 пассажир</option>
+                    <option value="2">2 пассажира</option>
+                    <option value="3">3 пассажира</option>
+                    <option value="4">4 пассажира</option>
+                </select>
+            </div>
+            <div class="field hidden" id="availableSeatsField">
+                <label>Свободные места</label>
+                <select id="availableSeatsSelect">
+                    <option value="1">1 место</option>
+                    <option value="2">2 места</option>
+                    <option value="3">3 места</option>
+                    <option value="4">4 места</option>
+                </select>
+            </div>
+            <div class="field hidden" id="timeFlexibilityField">
+                <label>Максимальное отклонение времени</label>
+                <select id="timeFlexibilitySelect">
+                    <option value="15">±15 минут</option>
+                    <option value="30" selected>±30 минут</option>
+                    <option value="60">±1 час</option>
+                    <option value="120">±2 часа</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Комментарий (необязательно)</label>
+                <input type="text" id="noteInput" placeholder="Например: могу взять с собой багаж">
+            </div>
+            <button class="btn" onclick="createRideRequest()">Создать заявку</button>
+        </div>
+        <div id="myRide" class="card hidden">
+            <h3>Ваша активная заявка</h3>
+            <p id="myRideInfo" style="margin-bottom: 12px;"></p>
+            <button class="btn btn-secondary" onclick="cancelMyRide()">Отменить заявку</button>
+        </div>
+        <div id="matchesBlock" class="card hidden">
+            <h3>Найденные попутчики</h3>
+            <div id="matchesList"></div>
+        </div>
+    </div>
+
+    <div id="searchScreen" class="screen">
+        <div class="card">
+            <h3>Поиск попутчиков</h3>
+            <div class="field">
+                <label>Откуда</label>
+                <input type="text" id="searchFromInput" placeholder="Откуда">
+                <button class="btn btn-secondary btn-sm" onclick="searchPlaceForSearch('from')">🔍 Найти</button>
+                <button class="btn btn-secondary btn-sm" onclick="openMapModal('search-from')">🗺️ На карте</button>
+                <div class="search-results" id="searchFromResults"></div>
+                <div class="selected-place hidden" id="searchFromSelected"></div>
+            </div>
+            <div class="field">
+                <label>Куда</label>
+                <input type="text" id="searchToInput" placeholder="Куда">
+                <button class="btn btn-secondary btn-sm" onclick="searchPlaceForSearch('to')">🔍 Найти</button>
+                <button class="btn btn-secondary btn-sm" onclick="openMapModal('search-to')">🗺️ На карте</button>
+                <div class="search-results" id="searchToResults"></div>
+                <div class="selected-place hidden" id="searchToSelected"></div>
+            </div>
+            <div class="field">
+                <label>Дата и время (необязательно)</label>
+                <input type="datetime-local" id="searchDepartureTimeInput">
+            </div>
+            <div class="field">
+                <label>Радиус поиска</label>
+                <select id="radiusSelect">
+                    <option value="1000">1 км</option>
+                    <option value="5000" selected>5 км</option>
+                    <option value="20000">20 км</option>
+                    <option value="50000">50 км</option>
+                </select>
+            </div>
+            <button class="btn" onclick="searchRides()">Искать</button>
+        </div>
+        <div id="searchMatchesBlock" class="card hidden">
+            <h3>Результаты</h3>
+            <div id="searchMatchesList"></div>
+        </div>
+    </div>
+
+    <div id="myRidesScreen" class="screen">
+        <div class="card">
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+                <button class="btn btn-sm" id="tabMyRides" onclick="switchRidesTab('myRides')">Мои заявки</button>
+                <button class="btn btn-sm" id="tabMyResponses" onclick="switchRidesTab('myResponses')">Мои отклики</button>
+            </div>
+            <div id="showAllRidesBtn" style="margin-bottom:12px;">
+                <button class="btn btn-sm btn-secondary" onclick="toggleShowAllRides()">Показать все</button>
+            </div>
+            <div id="myRidesList" class="ride-list"></div>
+            <div id="myResponsesList" class="ride-list hidden"></div>
+        </div>
+        <div id="responsesBlock" class="card hidden">
+            <h3>Отклики на заявку</h3>
+            <div id="responsesList"></div>
+        </div>
+    </div>
+
+    <div id="chatsScreen" class="screen">
+        <div class="card" id="chatsListCard">
+            <h3>Сообщения</h3>
+            <div id="chatsList"></div>
+        </div>
+        <div id="chatWindow" class="card hidden">
+            <button class="btn btn-secondary btn-sm" onclick="closeChatWindow()">← Назад</button>
+            <h3 id="chatTitle">Чат</h3>
+            <div id="chatMessages" style="max-height: 300px; overflow-y: auto; margin-bottom: 12px;"></div>
+            <div style="display: flex; gap: 8px;">
+                <input type="text" id="messageInput" placeholder="Введите сообщение...">
+                <button class="btn" style="width: auto;" onclick="sendMessage()">Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <div class="nav-item active" data-screen="createScreen" onclick="switchScreen('createScreen')">
+            <span class="icon">➕</span><span>Создать</span>
+        </div>
+        <div class="nav-item" data-screen="searchScreen" onclick="switchScreen('searchScreen')">
+            <span class="icon">🔍</span><span>Поиск</span>
+        </div>
+        <div class="nav-item" data-screen="myRidesScreen" onclick="switchScreen('myRidesScreen')">
+            <span class="icon">📋</span><span>Заявки</span>
+        </div>
+        <div class="nav-item" data-screen="chatsScreen" onclick="switchScreen('chatsScreen')">
+            <span class="icon">💬</span><span>Сообщения</span>
+        </div>
+    </div>
+</div>
+
+<!-- Модальные окна -->
+<div id="mapModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="mapModalTitle">Выберите точку</h3>
+            <button onclick="closeMapModal()" class="close-btn">✕</button>
+        </div>
+        <div id="mapContainer"></div>
+        <button onclick="confirmMapPoint()" class="btn" style="margin-top: 10px;">Готово</button>
+    </div>
+</div>
+
+<div id="reviewModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Оставить отзыв</h3>
+            <button onclick="closeReviewModal()" class="close-btn">✕</button>
+        </div>
+        <div class="stars" id="starsContainer">
+            <span class="star" data-value="1">★</span>
+            <span class="star" data-value="2">★</span>
+            <span class="star" data-value="3">★</span>
+            <span class="star" data-value="4">★</span>
+            <span class="star" data-value="5">★</span>
+        </div>
+        <textarea id="reviewComment" placeholder="Комментарий (необязательно)"></textarea>
+        <button class="btn" onclick="submitReview()" style="margin-top: 10px;">Отправить</button>
+    </div>
+</div>
+
+<div id="profileModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Профиль</h3>
+            <button onclick="closeProfileModal()" class="close-btn">✕</button>
+        </div>
+        <div id="profileInfo">
+            <p><strong>Имя:</strong> <span id="profileName"></span></p>
+            <p><strong>Username:</strong> <span id="profileUsername"></span></p>
+            <p><strong>Рейтинг:</strong> <span id="profileRating"></span></p>
+            <p><strong>Поездок:</strong> <span id="profileTripCount"></span></p>
+            <p><strong>Роль:</strong> <span id="profileRole"></span></p>
+            <div id="vehicleFields" class="hidden">
+                <p><strong>Автомобиль:</strong></p>
+                <input type="text" id="vehicleBrand" placeholder="Марка">
+                <input type="text" id="vehicleModel" placeholder="Модель">
+                <input type="text" id="vehicleColor" placeholder="Цвет">
+                <input type="number" id="vehicleSeats" placeholder="Количество мест">
+                <input type="text" id="vehiclePlateNumber" placeholder="Гос. номер">
+                <button class="btn btn-sm" onclick="saveVehicle()">Сохранить авто</button>
+            </div>
+            <button class="btn btn-secondary" onclick="changeRoleFromProfile()">Сменить роль</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    const tgInitData = tg.initData || '';
+
+    let currentUser = null;
+    let selectedFrom = null;
+    let selectedTo = null;
+    let currentRideId = null;
+    let searchFrom = null;
+    let searchTo = null;
+    let selectedRating = 0;
+    let reviewTargetTelegramId = null;
+    let reviewRideRequestId = null;
+    let currentMatchId = null;
+    let chatPollingInterval = null;
+    let currentRidesTab = 'myRides';
+    let showAllRides = false;
+
+    let map = null;
+    let tempMarker = null;
+    let selectedMapPoint = null;
+    let choosingFor = null;
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return String(text)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function showMessage(message, title = 'Информация') {
+        try {
+            if (window.Telegram?.WebApp?.showPopup) {
+                window.Telegram.WebApp.showPopup({ title, message });
+            } else {
+                alert(message);
+            }
+        } catch (e) { alert(message); }
+    }
+
+    function switchScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        const target = document.getElementById(screenId);
+        if (target) target.classList.add('active');
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        const navItem = document.querySelector(`.nav-item[data-screen="${screenId}"]`);
+        if (navItem) navItem.classList.add('active');
+        if (screenId === 'myRidesScreen') switchRidesTab(currentRidesTab);
+        if (screenId === 'chatsScreen') {
+            loadChats();
+            document.getElementById('chatWindow').classList.add('hidden');
+            document.getElementById('chatsListCard').classList.remove('hidden');
+        }
+    }
+
+    function switchRidesTab(tab) {
+        currentRidesTab = tab;
+        const myRidesBtn = document.getElementById('tabMyRides');
+        const myResponsesBtn = document.getElementById('tabMyResponses');
+        const showAllBtn = document.getElementById('showAllRidesBtn');
+
+        myRidesBtn.classList.toggle('active-tab', tab === 'myRides');
+        myResponsesBtn.classList.toggle('active-tab', tab === 'myResponses');
+
+        if (tab === 'myRides') {
+            document.getElementById('myRidesList').classList.remove('hidden');
+            document.getElementById('myResponsesList').classList.add('hidden');
+            showAllBtn.classList.remove('hidden');
+            loadMyRides();
+        } else {
+            document.getElementById('myRidesList').classList.add('hidden');
+            document.getElementById('myResponsesList').classList.remove('hidden');
+            showAllBtn.classList.add('hidden');
+            loadMyResponses();
+        }
+    }
+
+    function toggleShowAllRides() {
+        showAllRides = !showAllRides;
+        loadMyRides();
+    }
+
+    async function registerUser() {
+        try {
+            const resp = await fetch('/api/users/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Telegram-Init-Data': tgInitData
+                },
+                body: JSON.stringify({
+                    telegramId: 0,
+                    username: '',
+                    firstName: '',
+                    lastName: '',
+                    languageCode: '',
+                    isPremium: false
+                })
+            });
+            if (!resp.ok) throw new Error(await resp.text());
+            currentUser = await resp.json();
+            let greeting = `Привет, ${escapeHtml(currentUser.firstName || 'друг')}!`;
+            if (currentUser.rating) {
+                greeting += ` <small>⭐ ${escapeHtml(currentUser.rating.toFixed(1))}</small>`;
+            }
+            document.getElementById('greetingText').innerHTML = greeting;
+            if (currentUser.role) {
+                showRoleBadge(currentUser.role);
+                if (currentUser.role === 'DRIVER') {
+                    document.getElementById('availableSeatsField').classList.remove('hidden');
+                    document.getElementById('timeFlexibilityField').classList.remove('hidden');
+                } else {
+                    document.getElementById('availableSeatsField').classList.add('hidden');
+                    document.getElementById('timeFlexibilityField').classList.add('hidden');
+                }
+                switchScreen('createScreen');
+            } else {
+                switchScreen('roleSelection');
+            }
+        } catch (e) {
+            showMessage(e.message, 'Ошибка');
+        }
+    }
+    registerUser();
+
+    function showRoleBadge(role) {
+        const badge = document.getElementById('roleBadge');
+        badge.classList.remove('hidden');
+        if (role === 'PASSENGER') {
+            badge.textContent = '🚶 Пассажир';
+            badge.className = 'role-badge passenger';
+        } else {
+            badge.textContent = '🚗 Водитель';
+            badge.className = 'role-badge driver';
+        }
+    }
+
+    async function selectRole(role) {
+        if (!currentUser) return;
+        const resp = await fetch('/api/users/role', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': tgInitData
+            },
+            body: JSON.stringify({ role })
+        });
+        if (resp.ok) {
+            currentUser = await resp.json();
+            showRoleBadge(role);
+            if (role === 'DRIVER') {
+                document.getElementById('availableSeatsField').classList.remove('hidden');
+                document.getElementById('timeFlexibilityField').classList.remove('hidden');
+            } else {
+                document.getElementById('availableSeatsField').classList.add('hidden');
+                document.getElementById('timeFlexibilityField').classList.add('hidden');
+            }
+            switchScreen('createScreen');
+            showMessage('Роль выбрана!');
+        } else {
+            showMessage('Не удалось сохранить роль', 'Ошибка');
+        }
+    }
+
+    async function searchPlace(type) {
+        const input = type === 'from' ? document.getElementById('fromInput') : document.getElementById('toInput');
+        const resultsDiv = type === 'from' ? document.getElementById('fromResults') : document.getElementById('toResults');
+        const query = input.value.trim();
+        if (!query) return;
+        resultsDiv.innerHTML = '';
+        const resp = await fetch(`/api/geocoding?q=${encodeURIComponent(query)}`);
+        const places = await resp.json();
+        if (places.length === 0) {
+            resultsDiv.innerHTML = '<p>Ничего не найдено</p>';
+            return;
+        }
+        places.forEach(place => {
+            const item = document.createElement('div');
+            item.className = 'search-item';
+            item.innerHTML = `<div class="place-name">${escapeHtml(place.displayName)}</div><div class="coords">${escapeHtml(place.latitude.toFixed(4))}, ${escapeHtml(place.longitude.toFixed(4))}</div>`;
+            item.onclick = () => selectPlace(type, place);
+            resultsDiv.appendChild(item);
+        });
+    }
+
+    function selectPlace(type, place) {
+        if (type === 'from') {
+            selectedFrom = place;
+            document.getElementById('fromSelected').classList.remove('hidden');
+            document.getElementById('fromSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+        } else {
+            selectedTo = place;
+            document.getElementById('toSelected').classList.remove('hidden');
+            document.getElementById('toSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+        }
+        document.getElementById(type === 'from' ? 'fromResults' : 'toResults').innerHTML = '';
+    }
+
+    async function searchPlaceForSearch(type) {
+        const input = type === 'from' ? document.getElementById('searchFromInput') : document.getElementById('searchToInput');
+        const resultsDiv = type === 'from' ? document.getElementById('searchFromResults') : document.getElementById('searchToResults');
+        const query = input.value.trim();
+        if (!query) return;
+        resultsDiv.innerHTML = '';
+        const resp = await fetch(`/api/geocoding?q=${encodeURIComponent(query)}`);
+        const places = await resp.json();
+        if (places.length === 0) {
+            resultsDiv.innerHTML = '<p>Ничего не найдено</p>';
+            return;
+        }
+        places.forEach(place => {
+            const item = document.createElement('div');
+            item.className = 'search-item';
+            item.innerHTML = `<div class="place-name">${escapeHtml(place.displayName)}</div><div class="coords">${escapeHtml(place.latitude.toFixed(4))}, ${escapeHtml(place.longitude.toFixed(4))}</div>`;
+            item.onclick = () => selectPlaceForSearch(type, place);
+            resultsDiv.appendChild(item);
+        });
+    }
+
+    function selectPlaceForSearch(type, place) {
+        if (type === 'from') {
+            searchFrom = place;
+            document.getElementById('searchFromSelected').classList.remove('hidden');
+            document.getElementById('searchFromSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+        } else {
+            searchTo = place;
+            document.getElementById('searchToSelected').classList.remove('hidden');
+            document.getElementById('searchToSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+        }
+        document.getElementById(type === 'from' ? 'searchFromResults' : 'searchToResults').innerHTML = '';
+    }
+
+    async function createRideRequest() {
+        if (!selectedFrom || !selectedTo) { showMessage('Выберите оба места'); return; }
+        if (!currentUser || !currentUser.role) { showMessage('Сначала выберите роль'); return; }
+
+        const departureTime = document.getElementById('departureTimeInput').value;
+        if (!departureTime) { showMessage('Укажите дату и время'); return; }
+
+        const passengerCount = parseInt(document.getElementById('passengerCountSelect').value);
+        let availableSeats = null;
+        let timeFlexibility = 30;
+        if (currentUser.role === 'DRIVER') {
+            availableSeats = parseInt(document.getElementById('availableSeatsSelect').value);
+            timeFlexibility = parseInt(document.getElementById('timeFlexibilitySelect').value);
+        }
+        const note = document.getElementById('noteInput').value.trim();
+
+        const resp = await fetch('/api/rides', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': tgInitData
+            },
+            body: JSON.stringify({
+                role: currentUser.role,
+                fromLat: selectedFrom.latitude,
+                fromLon: selectedFrom.longitude,
+                toLat: selectedTo.latitude,
+                toLon: selectedTo.longitude,
+                departureTime: departureTime,
+                passengerCount: passengerCount,
+                availableSeats: availableSeats,
+                note: note,
+                timeFlexibilityMinutes: timeFlexibility
+            })
+        });
+        if (resp.ok) {
+            const created = await resp.json();
+            currentRideId = created.id;
+            document.getElementById('myRide').classList.remove('hidden');
+            document.getElementById('myRideInfo').innerHTML = `
+                <strong>Маршрут:</strong> ${escapeHtml(selectedFrom.displayName)} → ${escapeHtml(selectedTo.displayName)}<br>
+                <strong>Время:</strong> ${escapeHtml(new Date(departureTime).toLocaleString())}<br>
+                ${currentUser.role === 'DRIVER' ? `<strong>Свободные места:</strong> ${escapeHtml(availableSeats)}<br><strong>Отклонение времени:</strong> ±${escapeHtml(timeFlexibility)} мин` : `<strong>Пассажиров:</strong> ${escapeHtml(passengerCount)}`}
+                ${note ? `<br><strong>Комментарий:</strong> ${escapeHtml(note)}` : ''}
+            `;
+            showMessage('Заявка создана!');
+            searchMatches(selectedFrom.latitude, selectedFrom.longitude, selectedTo.latitude, selectedTo.longitude, departureTime, timeFlexibility);
+        } else {
+            showMessage(await resp.text(), 'Ошибка');
+        }
+    }
+
+    async function cancelMyRide() {
+        if (!currentRideId) return;
+        if (!confirm('Отменить заявку?')) return;
+        const resp = await fetch(`/api/rides/${currentRideId}/cancel`, {
+            method: 'PUT',
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        if (resp.ok) {
+            currentRideId = null;
+            document.getElementById('myRide').classList.add('hidden');
+            document.getElementById('matchesBlock').classList.add('hidden');
+            selectedFrom = selectedTo = null;
+            document.getElementById('fromSelected').classList.add('hidden');
+            document.getElementById('toSelected').classList.add('hidden');
+            document.getElementById('fromInput').value = '';
+            document.getElementById('toInput').value = '';
+            document.getElementById('departureTimeInput').value = '';
+            document.getElementById('noteInput').value = '';
+            showMessage('Заявка отменена');
+        } else {
+            showMessage(await resp.text(), 'Ошибка');
+        }
+    }
+
+    async function searchMatches(fromLat, fromLon, toLat, toLon, departureTime = null, flexibilityMinutes = 30) {
+        const radius = parseInt(document.getElementById('radiusSelect').value);
+        let url = `/api/rides/matches?role=${currentUser.role}&fromLat=${fromLat}&fromLon=${fromLon}&toLat=${toLat}&toLon=${toLon}&fromRadiusMeters=${radius}&toRadiusMeters=${radius}&flexibilityMinutes=${flexibilityMinutes}&limit=10`;
+        if (departureTime) {
+            url += `&departureTime=${encodeURIComponent(departureTime)}`;
+        }
+        const resp = await fetch(url, {
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        const matches = await resp.json();
+        const container = document.getElementById('matchesBlock');
+        const list = document.getElementById('matchesList');
+        container.classList.remove('hidden');
+        list.innerHTML = '';
+        if (matches.length === 0) {
+            list.innerHTML = '<p>Пока нет подходящих попутчиков</p>';
+            return;
+        }
+        matches.forEach(match => {
+            const card = document.createElement('div');
+            card.className = 'match-item';
+            const roleEmoji = match.role === 'PASSENGER' ? '🚶' : '🚗';
+            const timeStr = match.departureTime ? new Date(match.departureTime).toLocaleString() : 'Время не указано';
+            const seatsInfo = match.availableSeats ? ` · Свободных мест: ${match.availableSeats}` : (match.passengerCount ? ` · Пассажиров: ${match.passengerCount}` : '');
+            let vehicleInfo = '';
+            if (match.vehicleBrand) {
+                vehicleInfo = `<div class="vehicle-info">🚗 ${escapeHtml(match.vehicleBrand)} ${escapeHtml(match.vehicleModel || '')} ${escapeHtml(match.vehicleColor || '')} · ${match.vehicleSeats} мест</div>`;
+            }
+            let scoreInfo = '';
+            if (match.score !== undefined) {
+                scoreInfo = `<div class="score">🔥 Совпадение: ${Math.round(match.score)}%</div>`;
+            }
+            card.innerHTML = `
+                <strong>${roleEmoji} ${escapeHtml(match.userName)}</strong>
+                ${vehicleInfo}
+                ${scoreInfo}
+                <div class="route">${escapeHtml(match.fromLat.toFixed(2))},${escapeHtml(match.fromLon.toFixed(2))} → ${escapeHtml(match.toLat.toFixed(2))},${escapeHtml(match.toLon.toFixed(2))}</div>
+                <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsInfo)}</div>
+                ${match.note ? `<div class="details">${escapeHtml(match.note)}</div>` : ''}
+            `;
+            const respondBtn = document.createElement('button');
+            respondBtn.className = 'btn btn-sm';
+            respondBtn.textContent = 'Откликнуться';
+            respondBtn.onclick = async () => {
+                await respondToRide(match.id, respondBtn);
+            };
+            card.appendChild(respondBtn);
+            const reportBtn = document.createElement('button');
+            reportBtn.className = 'btn btn-sm btn-secondary';
+            reportBtn.textContent = 'Пожаловаться';
+            reportBtn.onclick = () => {
+                const reason = prompt('Причина жалобы:');
+                if (reason) {
+                    fetch('/api/safety/report', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Telegram-Init-Data': tgInitData
+                        },
+                        body: JSON.stringify({ reportedTelegramId: match.userTelegramId, reason, details: '' })
+                    }).then(() => showMessage('Жалоба отправлена'));
+                }
+            };
+            card.appendChild(reportBtn);
+            const blockBtn = document.createElement('button');
+            blockBtn.className = 'btn btn-sm btn-secondary';
+            blockBtn.textContent = 'Заблокировать';
+            blockBtn.onclick = () => {
+                if (confirm('Заблокировать пользователя?')) {
+                    fetch('/api/safety/block', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Telegram-Init-Data': tgInitData
+                        },
+                        body: JSON.stringify({ blockedTelegramId: match.userTelegramId })
+                    }).then(() => showMessage('Пользователь заблокирован'));
+                }
+            };
+            card.appendChild(blockBtn);
+            list.appendChild(card);
+        });
+    }
+
+    async function respondToRide(rideId, btn) {
+        const resp = await fetch(`/api/matches/${rideId}/respond`, {
+            method: 'POST',
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        if (resp.ok) {
+            const result = await resp.json();
+            showMessage(result.message);
+            btn.textContent = 'Отправлено';
+            btn.disabled = true;
+        } else {
+            showMessage(await resp.text(), 'Ошибка');
+        }
+    }
+
+    async function loadMyRides() {
+        let url = '/api/rides/my';
+        if (!showAllRides) {
+            url += '?status=ACTIVE';
+        }
+        const resp = await fetch(url, {
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        if (!resp.ok) return;
+        const rides = await resp.json();
+        const list = document.getElementById('myRidesList');
+        list.innerHTML = '';
+        if (rides.length === 0) {
+            list.innerHTML = '<p>У вас нет заявок</p>';
+            return;
+        }
+        rides.forEach(ride => {
+            const card = document.createElement('div');
+            card.className = 'ride-card';
+            const roleIcon = ride.role === 'PASSENGER' ? '🚶' : '🚗';
+            const statusClass = ride.status.toLowerCase();
+            const timeStr = ride.departureTime ? new Date(ride.departureTime).toLocaleString() : 'Время не указано';
+            const seatsInfo = ride.availableSeats ? ` · Свободных мест: ${ride.availableSeats}` : (ride.passengerCount ? ` · Пассажиров: ${ride.passengerCount}` : '');
+            card.innerHTML = `
+                <div class="ride-header">
+                    <span class="role-icon">${roleIcon}</span>
+                    <span class="role-name">${escapeHtml(ride.role === 'PASSENGER' ? 'Пассажир' : 'Водитель')}</span>
+                    <span class="status-badge ${statusClass}">${escapeHtml(ride.status)}</span>
+                </div>
+                <div class="route">${escapeHtml(ride.fromLat.toFixed(2))},${escapeHtml(ride.fromLon.toFixed(2))} → ${escapeHtml(ride.toLat.toFixed(2))},${escapeHtml(ride.toLon.toFixed(2))}</div>
+                <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsInfo)}</div>
+                ${ride.note ? `<div class="details">${escapeHtml(ride.note)}</div>` : ''}
+            `;
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            if (ride.status === 'ACTIVE') {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'btn btn-sm btn-secondary';
+                cancelBtn.textContent = 'Отменить';
+                cancelBtn.onclick = async () => {
+                    if (confirm('Отменить заявку?')) {
+                        await fetch(`/api/rides/${ride.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                        loadMyRides();
+                    }
+                };
+                actions.appendChild(cancelBtn);
+                const responsesBtn = document.createElement('button');
+                responsesBtn.className = 'btn btn-sm';
+                responsesBtn.textContent = 'Отклики';
+                responsesBtn.onclick = () => loadResponsesForRide(ride.id);
+                actions.appendChild(responsesBtn);
+            } else if (ride.status === 'MATCHED') {
+                const completeBtn = document.createElement('button');
+                completeBtn.className = 'btn btn-sm';
+                completeBtn.textContent = 'Завершить поездку';
+                completeBtn.onclick = async () => {
+                    if (confirm('Завершить поездку?')) {
+                        const resp = await fetch(`/api/rides/${ride.id}/complete`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                        if (resp.ok) {
+                            showMessage('Поездка завершена');
+                            loadMyRides();
+                        } else {
+                            showMessage(await resp.text(), 'Ошибка');
+                        }
+                    }
+                };
+                actions.appendChild(completeBtn);
+                if (ride.acceptedMatchId) {
+                    const chatBtn = document.createElement('button');
+                    chatBtn.className = 'btn btn-sm btn-secondary';
+                    chatBtn.textContent = 'Чат';
+                    chatBtn.onclick = () => openChat(ride.acceptedMatchId);
+                    actions.appendChild(chatBtn);
+                }
+            } else if (ride.status === 'COMPLETED') {
+                const reviewBtn = document.createElement('button');
+                reviewBtn.className = 'btn btn-sm btn-secondary';
+                reviewBtn.textContent = 'Оставить отзыв';
+                reviewBtn.onclick = async () => {
+                    const resp = await fetch(`/api/matches/for-request?rideRequestId=${ride.id}`, {
+                        headers: { 'X-Telegram-Init-Data': tgInitData }
+                    });
+                    if (resp.ok) {
+                        const matches = await resp.json();
+                        const acceptedMatch = matches.find(m => m.id === ride.acceptedMatchId);
+                        if (acceptedMatch) {
+                            openReviewModal(ride.id, acceptedMatch.responderTelegramId);
+                        } else {
+                            showMessage('Не удалось найти собеседника', 'Ошибка');
+                        }
+                    } else {
+                        showMessage('Не удалось загрузить отклики', 'Ошибка');
+                    }
+                };
+                actions.appendChild(reviewBtn);
+            }
+            if (actions.children.length > 0) card.appendChild(actions);
+            list.appendChild(card);
+        });
+    }
+
+    async function loadResponsesForRide(rideId) {
+        const resp = await fetch(`/api/matches/for-request?rideRequestId=${rideId}`, {
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        if (!resp.ok) return;
+        const matches = await resp.json();
+        const block = document.getElementById('responsesBlock');
+        const list = document.getElementById('responsesList');
+        block.classList.remove('hidden');
+        list.innerHTML = '';
+        if (matches.length === 0) {
+            list.innerHTML = '<p>Откликов нет</p>';
+            return;
+        }
+        matches.forEach(match => {
+            const item = document.createElement('div');
+            item.className = 'match-item';
+            let contactInfo = '';
+            if (match.status === 'ACCEPTED' && match.contactUsername) {
+                contactInfo = `<div class="contact">📞 @${escapeHtml(match.contactUsername)}</div>`;
+            }
+            item.innerHTML = `
+                <div class="responder">${escapeHtml(match.responderName)}</div>
+                <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}</span>
+                <div class="time">${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
+                ${contactInfo}
+            `;
+            if (match.status === 'PENDING') {
+                const acceptBtn = document.createElement('button');
+                acceptBtn.className = 'btn btn-sm';
+                acceptBtn.textContent = 'Принять';
+                acceptBtn.onclick = async () => {
+                    await fetch(`/api/matches/${match.id}/accept`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    loadResponsesForRide(rideId);
+                };
+                const rejectBtn = document.createElement('button');
+                rejectBtn.className = 'btn btn-sm btn-secondary';
+                rejectBtn.textContent = 'Отклонить';
+                rejectBtn.onclick = async () => {
+                    await fetch(`/api/matches/${match.id}/reject`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    loadResponsesForRide(rideId);
+                };
+                item.appendChild(acceptBtn);
+                item.appendChild(rejectBtn);
+            } else if (match.status === 'ACCEPTED') {
+                const chatBtn = document.createElement('button');
+                chatBtn.className = 'btn btn-sm btn-secondary';
+                chatBtn.textContent = 'Чат';
+                chatBtn.onclick = () => openChat(match.id);
+                item.appendChild(chatBtn);
+            }
+            list.appendChild(item);
+        });
+    }
+
+    async function loadMyResponses() {
+        const resp = await fetch('/api/matches/my', {
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        if (!resp.ok) return;
+        const matches = await resp.json();
+        const list = document.getElementById('myResponsesList');
+        list.innerHTML = '';
+        if (matches.length === 0) {
+            list.innerHTML = '<p>Вы ещё не откликались</p>';
+            return;
+        }
+        matches.forEach(match => {
+            const item = document.createElement('div');
+            item.className = 'match-item';
+            let contactInfo = '';
+            if (match.status === 'ACCEPTED' && match.contactUsername) {
+                contactInfo = `<div class="contact">📞 @${escapeHtml(match.contactUsername)}</div>`;
+            }
+            item.innerHTML = `
+                <div class="responder">Заявка #${escapeHtml(match.rideRequestId)}</div>
+                <div>Вы откликнулись: ${escapeHtml(match.responderName)}</div>
+                <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}</span>
+                <div class="time">${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
+                ${contactInfo}
+            `;
+            if (match.status === 'ACCEPTED') {
+                const chatBtn = document.createElement('button');
+                chatBtn.className = 'btn btn-sm btn-secondary';
+                chatBtn.textContent = 'Чат';
+                chatBtn.onclick = () => openChat(match.id);
+                item.appendChild(chatBtn);
+            }
+            list.appendChild(item);
+        });
+    }
+
+    async function loadChats() {
+        const [ridesResp, responsesResp] = await Promise.all([
+            fetch('/api/rides/my', { headers: { 'X-Telegram-Init-Data': tgInitData } }),
+            fetch('/api/matches/my', { headers: { 'X-Telegram-Init-Data': tgInitData } })
+        ]);
+        let rides = [];
+        let responses = [];
+        if (ridesResp.ok) rides = await ridesResp.json();
+        if (responsesResp.ok) responses = await responsesResp.json();
+        const chats = [];
+        rides.forEach(ride => {
+            if ((ride.status === 'MATCHED' || ride.status === 'COMPLETED') && ride.acceptedMatchId) {
+                chats.push({ matchId: ride.acceptedMatchId, rideRequestId: ride.id, interlocutorName: 'Собеседник' });
+            }
+        });
+        responses.forEach(match => {
+            if (match.status === 'ACCEPTED' || match.status === 'COMPLETED') {
+                chats.push({ matchId: match.id, rideRequestId: match.rideRequestId, interlocutorName: match.contactUsername ? '@' + match.contactUsername : 'Собеседник' });
+            }
+        });
+        const uniqueChats = Array.from(new Map(chats.map(c => [c.matchId, c])).values());
+        const list = document.getElementById('chatsList');
+        list.innerHTML = '';
+        if (uniqueChats.length === 0) {
+            list.innerHTML = '<p>Нет активных переписок</p>';
+            return;
+        }
+        uniqueChats.forEach(chat => {
+            const item = document.createElement('div');
+            item.className = 'match-item';
+            item.innerHTML = `
+                <strong>Поездка #${escapeHtml(chat.rideRequestId)}</strong><br>
+                <small>${escapeHtml(chat.interlocutorName)}</small>
+            `;
+            item.onclick = () => openChat(chat.matchId);
+            list.appendChild(item);
+        });
+    }
+
+    function openChat(matchId) {
+        currentMatchId = matchId;
+        document.getElementById('chatWindow').classList.remove('hidden');
+        document.getElementById('chatsListCard').classList.add('hidden');
+        refreshMessages();
+        if (chatPollingInterval) clearInterval(chatPollingInterval);
+        chatPollingInterval = setInterval(refreshMessages, 3000);
+    }
+
+    function closeChatWindow() {
+        currentMatchId = null;
+        if (chatPollingInterval) clearInterval(chatPollingInterval);
+        document.getElementById('chatWindow').classList.add('hidden');
+        document.getElementById('chatsListCard').classList.remove('hidden');
+        loadChats();
+    }
+
+    async function refreshMessages() {
+        if (!currentMatchId) return;
+        const resp = await fetch(`/api/messages/${currentMatchId}`, {
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        if (resp.ok) {
+            const messages = await resp.json();
+            const container = document.getElementById('chatMessages');
+            container.innerHTML = '';
+            messages.forEach(msg => {
+                const div = document.createElement('div');
+                div.className = 'chat-message';
+                div.innerHTML = `<span class="sender">${escapeHtml(msg.senderName)}:</span><span class="text">${escapeHtml(msg.text)}</span><span class="time">${escapeHtml(new Date(msg.createdAt).toLocaleTimeString())}</span>`;
+                container.appendChild(div);
+            });
+            container.scrollTop = container.scrollHeight;
+        } else {
+            showMessage('Не удалось загрузить сообщения', 'Ошибка');
+        }
+    }
+
+    async function sendMessage() {
+        const text = document.getElementById('messageInput').value.trim();
+        if (!text || !currentMatchId) return;
+        const resp = await fetch(`/api/messages/${currentMatchId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': tgInitData
+            },
+            body: JSON.stringify({ text })
+        });
+        if (resp.ok) {
+            document.getElementById('messageInput').value = '';
+            await refreshMessages();
+        } else {
+            showMessage(await resp.text(), 'Ошибка');
+        }
+    }
+
+    async function searchRides() {
+        if (!currentUser?.role) { showMessage('Выберите роль'); return; }
+        if (!searchFrom || !searchTo) { showMessage('Выберите оба места'); return; }
+        const departureTime = document.getElementById('searchDepartureTimeInput').value;
+        await searchMatches(searchFrom.latitude, searchFrom.longitude, searchTo.latitude, searchTo.longitude, departureTime || null, 30);
+    }
+
+    function openMapModal(mode) {
+        choosingFor = mode;
+        document.getElementById('mapModal').classList.add('active');
+        const titleMap = { from: 'Откуда', to: 'Куда', 'search-from': 'Откуда', 'search-to': 'Куда', route: 'Маршрут' };
+        document.getElementById('mapModalTitle').textContent = titleMap[mode] || 'Выберите точку';
+        setTimeout(() => {
+            if (!map) {
+                map = L.map('mapContainer').setView([53.9, 27.56], 11);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(map);
+                map.on('click', (e) => {
+                    if (choosingFor === 'route') return;
+                    setTempMarker(e.latlng.lat, e.latlng.lng);
+                });
+            } else {
+                map.invalidateSize();
+            }
+            if (choosingFor === 'route') {
+                showRouteOnMap(searchFrom, searchTo);
+            } else {
+                let existing = null;
+                if (choosingFor === 'from') existing = selectedFrom;
+                else if (choosingFor === 'to') existing = selectedTo;
+                else if (choosingFor === 'search-from') existing = searchFrom;
+                else if (choosingFor === 'search-to') existing = searchTo;
+                if (existing) {
+                    setTempMarker(existing.latitude, existing.longitude);
+                    map.setView([existing.latitude, existing.longitude], 11);
+                }
+            }
+        }, 100);
+    }
+
+    function setTempMarker(lat, lon) {
+        if (tempMarker) map.removeLayer(tempMarker);
+        tempMarker = L.marker([lat, lon], { draggable: true }).addTo(map);
+        tempMarker.on('dragend', () => {
+            const pos = tempMarker.getLatLng();
+            selectedMapPoint = { lat: pos.lat, lon: pos.lng };
+        });
+        selectedMapPoint = { lat, lon };
+    }
+
+    function closeMapModal() {
+        document.getElementById('mapModal').classList.remove('active');
+        if (map) {
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+                    map.removeLayer(layer);
+                }
+            });
+            tempMarker = null;
+        }
+    }
+
+    function confirmMapPoint() {
+        if (!selectedMapPoint) {
+            showMessage('Выберите точку на карте');
+            return;
+        }
+        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${selectedMapPoint.lat}&lon=${selectedMapPoint.lon}&format=json`)
+            .then(r => r.json())
+            .then(data => {
+                const place = {
+                    displayName: data.display_name || `Точка (${selectedMapPoint.lat.toFixed(4)}, ${selectedMapPoint.lon.toFixed(4)})`,
+                    latitude: selectedMapPoint.lat,
+                    longitude: selectedMapPoint.lon
+                };
+                assignPlace(choosingFor, place);
+                closeMapModal();
+            })
+            .catch(() => {
+                const place = {
+                    displayName: `Точка (${selectedMapPoint.lat.toFixed(4)}, ${selectedMapPoint.lon.toFixed(4)})`,
+                    latitude: selectedMapPoint.lat,
+                    longitude: selectedMapPoint.lon
+                };
+                assignPlace(choosingFor, place);
+                closeMapModal();
+            });
+    }
+
+    function assignPlace(type, place) {
+        if (type === 'from') {
+            selectedFrom = place;
+            document.getElementById('fromSelected').classList.remove('hidden');
+            document.getElementById('fromSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+            document.getElementById('fromInput').value = place.displayName;
+        } else if (type === 'to') {
+            selectedTo = place;
+            document.getElementById('toSelected').classList.remove('hidden');
+            document.getElementById('toSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+            document.getElementById('toInput').value = place.displayName;
+        } else if (type === 'search-from') {
+            searchFrom = place;
+            document.getElementById('searchFromSelected').classList.remove('hidden');
+            document.getElementById('searchFromSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+            document.getElementById('searchFromInput').value = place.displayName;
+        } else if (type === 'search-to') {
+            searchTo = place;
+            document.getElementById('searchToSelected').classList.remove('hidden');
+            document.getElementById('searchToSelected').innerHTML = `📍 ${escapeHtml(place.displayName)}`;
+            document.getElementById('searchToInput').value = place.displayName;
+        }
+    }
+
+    function showRouteOnMap(from, to) {
+        if (!from || !to) return;
+        if (tempMarker) map.removeLayer(tempMarker);
+        L.marker([from.latitude, from.longitude]).addTo(map).bindPopup('Откуда');
+        L.marker([to.latitude, to.longitude]).addTo(map).bindPopup('Куда');
+        L.polyline([[from.latitude, from.longitude], [to.latitude, to.longitude]], {
+            color: 'blue', weight: 3
+        }).addTo(map);
+        map.fitBounds([[from.latitude, from.longitude], [to.latitude, to.longitude]]);
+    }
+
+    function openReviewModal(rideRequestId, targetTelegramId) {
+        reviewRideRequestId = rideRequestId;
+        reviewTargetTelegramId = targetTelegramId;
+        selectedRating = 0;
+        document.getElementById('reviewComment').value = '';
+        document.getElementById('reviewModal').classList.add('active');
+        document.querySelectorAll('.star').forEach(s => s.classList.remove('active'));
+    }
+
+    function closeReviewModal() {
+        document.getElementById('reviewModal').classList.remove('active');
+    }
+
+    async function submitReview() {
+        if (selectedRating === 0) {
+            showMessage('Пожалуйста, выберите оценку', 'Ошибка');
+            return;
+        }
+        const comment = document.getElementById('reviewComment').value.trim();
+        const resp = await fetch('/api/reviews', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': tgInitData
+            },
+            body: JSON.stringify({
+                rideRequestId: reviewRideRequestId,
+                reviewedTelegramId: reviewTargetTelegramId,
+                rating: selectedRating,
+                comment: comment
+            })
+        });
+        if (resp.ok) {
+            showMessage('Спасибо за отзыв!');
+            closeReviewModal();
+            loadMyRides();
+        } else {
+            showMessage(await resp.text(), 'Ошибка');
+        }
+    }
+
+    function openProfileModal() {
+        if (!currentUser) return;
+        document.getElementById('profileName').textContent = currentUser.firstName + ' ' + (currentUser.lastName || '');
+        document.getElementById('profileUsername').textContent = currentUser.username || 'не указан';
+        document.getElementById('profileRating').textContent = currentUser.rating ? currentUser.rating.toFixed(1) : 'нет';
+        document.getElementById('profileTripCount').textContent = currentUser.tripCount || 0;
+        document.getElementById('profileRole').textContent = currentUser.role === 'PASSENGER' ? 'Пассажир' : 'Водитель';
+
+        const vehicleFields = document.getElementById('vehicleFields');
+        if (currentUser.role === 'DRIVER') {
+            vehicleFields.classList.remove('hidden');
+            if (currentUser.vehicleBrand) {
+                document.getElementById('vehicleBrand').value = currentUser.vehicleBrand;
+                document.getElementById('vehicleModel').value = currentUser.vehicleModel || '';
+                document.getElementById('vehicleColor').value = currentUser.vehicleColor || '';
+                document.getElementById('vehicleSeats').value = currentUser.vehicleSeats || '';
+            }
+        } else {
+            vehicleFields.classList.add('hidden');
+        }
+
+        document.getElementById('profileModal').classList.add('active');
+    }
+
+    function closeProfileModal() {
+        document.getElementById('profileModal').classList.remove('active');
+    }
+
+    async function saveVehicle() {
+        if (!currentUser || currentUser.role !== 'DRIVER') return;
+        const brand = document.getElementById('vehicleBrand').value.trim();
+        const model = document.getElementById('vehicleModel').value.trim();
+        const color = document.getElementById('vehicleColor').value.trim();
+        const seats = parseInt(document.getElementById('vehicleSeats').value);
+        const plateNumber = document.getElementById('vehiclePlateNumber').value.trim();
+        if (!brand || !model || !seats) {
+            showMessage('Заполните марку, модель и количество мест', 'Ошибка');
+            return;
+        }
+        const resp = await fetch('/api/vehicles', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': tgInitData
+            },
+            body: JSON.stringify({ brand, model, color, seats, plateNumber })
+        });
+        if (resp.ok) {
+            showMessage('Автомобиль сохранён');
+            closeProfileModal();
+            registerUser();
+        } else {
+            showMessage(await resp.text(), 'Ошибка');
+        }
+    }
+
+    function changeRoleFromProfile() {
+        closeProfileModal();
+        switchScreen('roleSelection');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.star').forEach(star => {
+            star.addEventListener('click', () => {
+                selectedRating = parseInt(star.dataset.value);
+                document.querySelectorAll('.star').forEach(s => {
+                    s.classList.toggle('active', parseInt(s.dataset.value) <= selectedRating);
+                });
+            });
+        });
+    });
+</script>
+</body>
+</html>
