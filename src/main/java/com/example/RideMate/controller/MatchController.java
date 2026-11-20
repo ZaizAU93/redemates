@@ -25,10 +25,21 @@ public class MatchController {
 
     @PostMapping("/{rideRequestId}/respond")
     public MatchResponseDTO respond(@PathVariable Long rideRequestId,
+                                    @RequestParam(required = false) Integer seats,
                                     @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
         Long telegramId = authService.authenticate(initData);
-        return matchService.respondToRideRequest(rideRequestId, telegramId);
+        return matchService.respondToRideRequest(rideRequestId, telegramId, seats);
     }
+
+    @PutMapping("/{matchId}/confirm")
+    public ResponseEntity<Void> confirmMatch(
+            @PathVariable Long matchId,
+            @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+        Long telegramId = authService.authenticate(initData);
+        matchService.confirmResponse(matchId, telegramId);
+        return ResponseEntity.ok().build();
+    }
+
 
     @GetMapping("/my")
     public List<MatchDTO> getMyResponses(

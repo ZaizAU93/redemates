@@ -1,13 +1,14 @@
 package com.example.RideMate.service;
 
-
 import com.example.RideMate.entity.*;
-import com.example.RideMate.repository.*;
+import com.example.RideMate.repository.MatchRepository;
+import com.example.RideMate.repository.ReviewRepository;
+import com.example.RideMate.repository.RideRequestRepository;
+import com.example.RideMate.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-
 
 @Service
 public class ReviewService {
@@ -27,6 +28,41 @@ public class ReviewService {
         this.matchRepository = matchRepository;
     }
 
+    /**
+     * Возвращает telegramId второй стороны поездки — того, кому оставляют отзыв.
+     * Отзыв можно оставить только участнику подтверждённой брони.
+     */
+    @Transactional(readOnly = true)
+    public Long getCounterparty(Long rideRequestId, Long reviewerTelegramId) {
+        RideRequest rideRequest = rideRequestRepository.findById(rideRequestId)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        if (rideRequest.getStatus() != RideStatus.COMPLETED) {
+            throw new RuntimeException("Отзыв можно оставить только после завершения поездки");
+        }
+
+        User owner = rideRequest.getUser();
+        boolean isOwner = owner.getTelegramId().equals(reviewerTelegramId);
+
+        Match match = null;
+        if (rideRequest.getAcceptedMatchId() != null) {
+            match = matchRepository.findById(rideRequest.getAcceptedMatchId()).orElse(null);
+        }
+
+        if (match == null ||
+                (match.getStatus() != MatchStatus.CONFIRMED && match.getStatus() != MatchStatus.COMPLETED)) {
+            throw new RuntimeException("Отзыв доступен только участникам подтверждённой поездки");
+        }
+
+        if (isOwner) {
+            return match.getResponder().getTelegramId();
+        }
+        if (match.getResponder().getTelegramId().equals(reviewerTelegramId)) {
+            return owner.getTelegramId();
+        }
+        throw new RuntimeException("Вы не участвовали в этой поездке");
+    }
+
     @Transactional
     public void createReview(Long rideRequestId, Long reviewerTelegramId,
                              Long reviewedTelegramId, int rating, String comment) {
@@ -37,26 +73,19 @@ public class ReviewService {
         RideRequest rideRequest = rideRequestRepository.findById(rideRequestId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
-        if (rideRequest.getStatus() != RideStatus.COMPLETED) {
-            throw new RuntimeException("Нельзя оставить отзыв до завершения поездки");
+        if (rating < 1 || rating > 5) {
+            throw new RuntimeException("Оценка должна быть от 1 до 5");
         }
 
-        // Проверяем участие
-        boolean isOwner = rideRequest.getUser().getTelegramId().equals(reviewerTelegramId);
-        boolean isResponder = false;
-        if (rideRequest.getAcceptedMatchId() != null) {
-            Match match = matchRepository.findById(rideRequest.getAcceptedMatchId()).orElse(null);
-            if (match != null && match.getResponder().getTelegramId().equals(reviewerTelegramId)) {
-                isResponder = true;
-            }
-        }
-        if (!isOwner && !isResponder) {
-            throw new RuntimeException("Вы не участвовали в этой поездке");
+        // Участие и вторая сторона — единая проверка
+        Long expectedTarget = getCounterparty(rideRequestId, reviewerTelegramId);
+        if (!expectedTarget.equals(reviewedTelegramId)) {
+            throw new RuntimeException("Можно оценить только собеседника по этой поездке");
         }
 
-        // Проверяем, не оставлял ли уже отзыв
-        if (reviewRepository.findByRideRequestIdAndReviewerId(rideRequestId, reviewer.getId()).isPresent()) {
-            throw new RuntimeException("Вы уже оставили отзыв");
+        // Один отзыв на заявку от одного участника (плюс ограничение в базе)
+        if (reviewRepository.existsByRideRequestIdAndReviewerId(rideRequestId, reviewer.getId())) {
+            throw new RuntimeException("Вы уже оставили отзыв по этой поездке");
         }
 
         Review review = new Review();
@@ -67,14 +96,15 @@ public class ReviewService {
         review.setComment(comment);
         reviewRepository.save(review);
 
-        // Пересчитываем рейтинг
-        double avg = reviewRepository.getAverageRating(reviewed);
-        long count = reviewRepository.countByReviewed(reviewed);
-        reviewed.setRating(avg);
-        reviewed.setTripCount((int) count); // или оставить tripCount отдельным, но обновим количество оценок
-        userRepository.save(reviewed);
+        // Пересчитываем только рейтинг; tripCount меняется только в completeRide
+        Double avg = reviewRepository.getAverageRatingByUserId(reviewed.getId());
+        if (avg != null) {
+            reviewed.setRating(Math.round(avg * 10) / 10.0);
+            userRepository.save(reviewed);
+        }
     }
 
+    @Transactional(readOnly = true)
     public List<Review> getReviewsForUser(Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));

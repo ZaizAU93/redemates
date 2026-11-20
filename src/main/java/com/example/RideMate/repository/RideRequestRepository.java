@@ -2,6 +2,7 @@ package com.example.RideMate.repository;
 
 import com.example.RideMate.entity.RideRequest;
 import com.example.RideMate.entity.RideStatus;
+import org.locationtech.jts.geom.LineString;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -67,12 +68,62 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
     int decrementSeats(@Param("rideId") Long rideId, @Param("requestedSeats") int requestedSeats);
 
     @Modifying
-    @Query("UPDATE RideRequest r SET r.availableSeats = r.availableSeats + 1 WHERE r.id = :rideId")
-    int incrementSeats(@Param("rideId") Long rideId);
+    @Query("UPDATE RideRequest r SET r.availableSeats = r.availableSeats + :seats " +
+            "WHERE r.id = :rideId")
+    int incrementSeats(@Param("rideId") Long rideId, @Param("seats") int seats);
+
 
     List<RideRequest> findByStatusAndDepartureTimeBefore(RideStatus status, LocalDateTime time);
 
     List<RideRequest> findByUserIdAndStatus(Long userId, RideStatus status);
+
+    /**
+     * Поиск заявок водителей, чей маршрут проходит рядом с точками пассажира
+     * и в правильном направлении (from раньше to вдоль линии).
+     */
+    @Query(value = """
+        SELECT * FROM ride_requests
+        WHERE role = 'DRIVER'
+          AND status = 'ACTIVE'
+          AND route IS NOT NULL
+          AND ST_DWithin(route, ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326), :fromRadiusMeters)
+          AND ST_DWithin(route, ST_SetSRID(ST_MakePoint(:toLon, :toLat), 4326), :toRadiusMeters)
+          AND ST_LineLocatePoint(route::geometry, ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326))
+              < ST_LineLocatePoint(route::geometry, ST_SetSRID(ST_MakePoint(:toLon, :toLat), 4326))
+          AND (available_seats IS NULL OR available_seats > 0)
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<RideRequest> findRequestsAlongRoute(
+            @Param("fromLat") double fromLat,
+            @Param("fromLon") double fromLon,
+            @Param("toLat") double toLat,
+            @Param("toLon") double toLon,
+            @Param("fromRadiusMeters") double fromRadiusMeters,
+            @Param("toRadiusMeters") double toRadiusMeters,
+            @Param("limit") int limit
+    );
+
+    /**
+     * Для водителя: заявки пассажиров, чьи точки лежат рядом с его маршрутом,
+     * в правильном направлении.
+     */
+    @Query(value = """
+        SELECT * FROM ride_requests
+        WHERE role = 'PASSENGER'
+          AND status = 'ACTIVE'
+          AND ST_DWithin(:route, from_location, :fromRadiusMeters)
+          AND ST_DWithin(:route, to_location, :toRadiusMeters)
+          AND ST_LineLocatePoint(:route::geometry, from_location::geometry)
+              < ST_LineLocatePoint(:route::geometry, to_location::geometry)
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<RideRequest> findPassengersAlongRoute(
+            @Param("route") LineString route,
+            @Param("fromRadiusMeters") double fromRadiusMeters,
+            @Param("toRadiusMeters") double toRadiusMeters,
+            @Param("limit") int limit
+    );
+
 
 
 }

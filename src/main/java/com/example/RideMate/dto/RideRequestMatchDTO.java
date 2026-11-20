@@ -22,6 +22,9 @@ public record RideRequestMatchDTO(
         String vehicleColor,
         Integer vehicleSeats,
         Integer timeFlexibilityMinutes,
-        double score
+        double score,
+
+        java.math.BigDecimal pricePerSeat   // только для водителя, может быть null
+
 ) {
 }

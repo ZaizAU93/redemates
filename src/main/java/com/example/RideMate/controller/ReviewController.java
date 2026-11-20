@@ -41,4 +41,13 @@ public class ReviewController {
     }
 
     public record CreateReviewRequest(Long rideRequestId, Long reviewedTelegramId, int rating, String comment) {}
+
+
+    @GetMapping("/counterparty/{rideRequestId}")
+    public Long getCounterparty(@PathVariable Long rideRequestId,
+                                @RequestHeader("X-Telegram-Init-Data") String initData) {
+        Long telegramId = authService.authenticate(initData);
+        return reviewService.getCounterparty(rideRequestId, telegramId);
+    }
+
 }

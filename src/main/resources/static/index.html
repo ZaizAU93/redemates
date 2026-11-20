@@ -211,6 +211,8 @@
             margin-top: 4px;
         }
         .match-status.pending { background: #fff8e1; color: #f57f17; }
+        .match-status.confirming { background: #fff8e1; color: #f57f17; }
+        .match-status.confirmed { background: #e8f5e9; color: #2e7d32; }
         .match-status.accepted { background: #e8f5e9; color: #2e7d32; }
         .match-status.rejected { background: #ffebee; color: #c62828; }
         .match-status.completed { background: #e8f5e9; color: #2e7d32; }
@@ -272,6 +274,8 @@
             border-radius: 16px;
             width: 90%;
             max-width: 400px;
+            max-height: 90vh;
+            overflow-y: auto;
         }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; }
@@ -287,6 +291,47 @@
         #profileInfo p { margin-bottom: 8px; }
         .vehicle-info { font-size: 14px; margin: 4px 0; color: var(--text-secondary); }
         .score { font-weight: 600; color: #ff6f00; margin: 4px 0; }
+        #profileInfo input { margin-bottom: 8px; }
+
+        /* Экран карты */
+        #mapScreen { padding: 0 0 16px; }
+        #mainMap { height: 55vh; min-height: 320px; border-radius: 0 0 var(--radius) var(--radius); }
+        .map-legend {
+            display: flex; gap: 12px; padding: 10px 16px; font-size: 12px; color: var(--text-secondary);
+        }
+        .map-legend span::before {
+            content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+            margin-right: 4px; vertical-align: middle;
+        }
+        .legend-driver::before { background: var(--driver); }
+        .legend-passenger::before { background: var(--passenger); }
+
+        /* Приглушённая атрибуция OSM (без флага и логотипа Leaflet) */
+        .leaflet-control-attribution {
+            background: rgba(255, 255, 255, 0.6);
+            font-size: 9px;
+            opacity: 0.6;
+            margin: 4px;
+            border-radius: 4px;
+        }
+        .leaflet-control-attribution a {
+            font-size: 9px;
+            color: #555;
+        }
+
+        /* Промежуточные точки в форме */
+        .waypoints-list { margin: 8px 0; }
+        .waypoint-item {
+            display: flex; align-items: center; justify-content: space-between;
+            background: #f9f9f9; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 14px;
+        }
+        .waypoint-item button {
+            background: none; border: none; color: #c62828; cursor: pointer; font-size: 16px; padding: 0 4px;
+        }
+
+        /* Пустые состояния */
+        .empty-state { text-align: center; padding: 20px 12px; color: var(--text-secondary); }
+        .empty-state .btn { margin-top: 12px; }
     </style>
 </head>
 <body>
@@ -299,12 +344,29 @@
         </div>
     </div>
 
-    <div id="roleSelection" class="screen active">
+    <div id="roleSelection" class="screen">
         <div class="card" style="text-align: center;">
             <h3>Кто вы?</h3>
             <p style="color: var(--text-secondary); margin-bottom: 20px;">Выберите вашу роль, чтобы начать</p>
             <button class="btn" style="margin-bottom: 12px; background: var(--passenger);" onclick="selectRole('PASSENGER')">🚶 Я пассажир</button>
             <button class="btn" style="background: var(--driver);" onclick="selectRole('DRIVER')">🚗 Я водитель</button>
+        </div>
+    </div>
+
+    <div id="mapScreen" class="screen active">
+        <div id="mainMap"></div>
+        <div class="map-legend">
+            <span class="legend-driver">Водители</span>
+            <span class="legend-passenger">Пассажиры</span>
+        </div>
+        <div class="card">
+            <h3>Поездки рядом</h3>
+            <div id="mapRideList"><div class="empty-state">Загружаем поездки рядом с вами…</div></div>
+        </div>
+        <div class="card">
+            <h3>Мои подписки на маршруты</h3>
+            <div id="subsList"></div>
+            <button class="btn btn-sm btn-secondary" onclick="subscribeFromCurrent()">🔔 Подписаться на текущий маршрут</button>
         </div>
     </div>
 
@@ -327,6 +389,17 @@
                 <div class="search-results" id="toResults"></div>
                 <div class="selected-place hidden" id="toSelected"></div>
             </div>
+            <div class="field hidden" id="waypointsField">
+                <label>Промежуточные точки (по пути)</label>
+                <div class="waypoints-list" id="waypointsList"></div>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" id="waypointInput" placeholder="Город по пути">
+                    <button class="btn btn-sm btn-secondary" onclick="searchWaypoint()">🔍</button>
+                    <button class="btn btn-sm btn-secondary" onclick="openMapModal('waypoint')">🗺️</button>
+                </div>
+                <div class="search-results" id="waypointResults"></div>
+                <button class="btn btn-sm btn-secondary" onclick="addWaypoint()" style="margin-top:8px;">➕ Добавить точку</button>
+            </div>
             <div class="field">
                 <label>Дата и время отправления</label>
                 <input type="datetime-local" id="departureTimeInput">
@@ -348,6 +421,10 @@
                     <option value="3">3 места</option>
                     <option value="4">4 места</option>
                 </select>
+            </div>
+            <div class="field hidden" id="priceField">
+                <label>Цена за место (BYN)</label>
+                <input type="number" id="priceInput" min="0" step="0.5" placeholder="Например: 25">
             </div>
             <div class="field hidden" id="timeFlexibilityField">
                 <label>Максимальное отклонение времени</label>
@@ -450,7 +527,10 @@
     </div>
 
     <div class="bottom-nav">
-        <div class="nav-item active" data-screen="createScreen" onclick="switchScreen('createScreen')">
+        <div class="nav-item active" data-screen="mapScreen" onclick="switchScreen('mapScreen')">
+            <span class="icon">🗺️</span><span>Карта</span>
+        </div>
+        <div class="nav-item" data-screen="createScreen" onclick="switchScreen('createScreen')">
             <span class="icon">➕</span><span>Создать</span>
         </div>
         <div class="nav-item" data-screen="searchScreen" onclick="switchScreen('searchScreen')">
@@ -546,6 +626,13 @@
     let selectedMapPoint = null;
     let choosingFor = null;
 
+    let mainMap = null;
+    let mainMapLayers = [];
+    let userLocation = null;
+
+    let waypoints = [];
+    let waypointSearchResult = null;
+
     function escapeHtml(text) {
         if (!text) return '';
         return String(text)
@@ -566,6 +653,8 @@
         } catch (e) { alert(message); }
     }
 
+    function roleEmoji(role) { return role === 'DRIVER' ? '🚗' : '🚶'; }
+
     function switchScreen(screenId) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         const target = document.getElementById(screenId);
@@ -573,6 +662,7 @@
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         const navItem = document.querySelector(`.nav-item[data-screen="${screenId}"]`);
         if (navItem) navItem.classList.add('active');
+        if (screenId === 'mapScreen') { setTimeout(initMainMap, 100); loadSubscriptions(); }
         if (screenId === 'myRidesScreen') switchRidesTab(currentRidesTab);
         if (screenId === 'chatsScreen') {
             loadChats();
@@ -608,6 +698,37 @@
         loadMyRides();
     }
 
+    // ---------- Геолокация ----------
+
+    function requestUserLocation() {
+        return new Promise((resolve) => {
+            if (tg?.requestLocation) {
+                const handler = (eventData) => {
+                    tg.offEvent('locationRequested', handler);
+                    if (eventData && eventData.response && eventData.response.location_available) {
+                        resolve({
+                            lat: eventData.response.location.latitude,
+                            lon: eventData.response.location.longitude
+                        });
+                    } else {
+                        resolve(null);
+                    }
+                };
+                tg.onEvent('locationRequested', handler);
+                tg.requestLocation();
+            } else if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                    () => resolve(null)
+                );
+            } else {
+                resolve(null);
+            }
+        });
+    }
+
+    // ---------- Регистрация ----------
+
     async function registerUser() {
         try {
             const resp = await fetch('/api/users/register', {
@@ -616,14 +737,7 @@
                     'Content-Type': 'application/json',
                     'X-Telegram-Init-Data': tgInitData
                 },
-                body: JSON.stringify({
-                    telegramId: 0,
-                    username: '',
-                    firstName: '',
-                    lastName: '',
-                    languageCode: '',
-                    isPremium: false
-                })
+                body: JSON.stringify({})
             });
             if (!resp.ok) throw new Error(await resp.text());
             currentUser = await resp.json();
@@ -632,23 +746,26 @@
                 greeting += ` <small>⭐ ${escapeHtml(currentUser.rating.toFixed(1))}</small>`;
             }
             document.getElementById('greetingText').innerHTML = greeting;
-            if (currentUser.role) {
-                showRoleBadge(currentUser.role);
-                if (currentUser.role === 'DRIVER') {
-                    document.getElementById('availableSeatsField').classList.remove('hidden');
-                    document.getElementById('timeFlexibilityField').classList.remove('hidden');
-                } else {
-                    document.getElementById('availableSeatsField').classList.add('hidden');
-                    document.getElementById('timeFlexibilityField').classList.add('hidden');
-                }
-                switchScreen('createScreen');
-            } else {
-                switchScreen('roleSelection');
-            }
+            applyRole(currentUser.role);
         } catch (e) {
             showMessage(e.message, 'Ошибка');
         }
     }
+
+    function applyRole(role) {
+        if (!role) {
+            switchScreen('roleSelection');
+            return;
+        }
+        showRoleBadge(role);
+        const isDriver = role === 'DRIVER';
+        document.getElementById('availableSeatsField').classList.toggle('hidden', !isDriver);
+        document.getElementById('priceField').classList.toggle('hidden', !isDriver);
+        document.getElementById('timeFlexibilityField').classList.toggle('hidden', !isDriver);
+        document.getElementById('waypointsField').classList.toggle('hidden', !isDriver);
+        if (currentUser?.role) switchScreen('mapScreen');
+    }
+
     registerUser();
 
     function showRoleBadge(role) {
@@ -664,7 +781,6 @@
     }
 
     async function selectRole(role) {
-        if (!currentUser) return;
         const resp = await fetch('/api/users/role', {
             method: 'PUT',
             headers: {
@@ -675,20 +791,113 @@
         });
         if (resp.ok) {
             currentUser = await resp.json();
-            showRoleBadge(role);
-            if (role === 'DRIVER') {
-                document.getElementById('availableSeatsField').classList.remove('hidden');
-                document.getElementById('timeFlexibilityField').classList.remove('hidden');
-            } else {
-                document.getElementById('availableSeatsField').classList.add('hidden');
-                document.getElementById('timeFlexibilityField').classList.add('hidden');
-            }
-            switchScreen('createScreen');
+            applyRole(role);
             showMessage('Роль выбрана!');
         } else {
             showMessage('Не удалось сохранить роль', 'Ошибка');
         }
     }
+
+    // ---------- Карта как главный экран ----------
+
+    function initMainMap() {
+        if (mainMap) { mainMap.invalidateSize(); loadNearbyRides(); return; }
+        mainMap = L.map('mainMap', {
+            center: [53.9, 27.56],
+            zoom: 10,
+            attributionControl: true
+        });
+        mainMap.attributionControl.setPrefix(false); // убирает флаг и надпись «Leaflet |»
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(mainMap);
+
+        requestUserLocation().then(loc => {
+            if (loc) {
+                userLocation = loc;
+                mainMap.setView([loc.lat, loc.lon], 11);
+            }
+            loadNearbyRides();
+        });
+    }
+
+    async function loadNearbyRides() {
+        const list = document.getElementById('mapRideList');
+        if (!currentUser?.role) {
+            list.innerHTML = '<div class="empty-state">Выберите роль, чтобы увидеть поездки</div>';
+            return;
+        }
+        const oppositeRole = currentUser.role === 'PASSENGER' ? 'DRIVER' : 'PASSENGER';
+        const loc = userLocation || { lat: 53.9, lon: 27.56 };
+        try {
+            const url = `/api/rides/matches?role=${oppositeRole}&fromLat=${loc.lat}&fromLon=${loc.lon}&toLat=${loc.lat}&toLon=${loc.lon}&fromRadiusMeters=30000&toRadiusMeters=30000&limit=10`;
+            const resp = await fetch(url, {
+                headers: { 'X-Telegram-Init-Data': tgInitData }
+            });
+            if (!resp.ok) throw new Error(await resp.text());
+            renderMapRides(await resp.json());
+        } catch (e) {
+            list.innerHTML = '<div class="empty-state">Не удалось загрузить поездки. Попробуйте ещё раз.</div>';
+        }
+    }
+
+    function renderMapRides(rides) {
+        const list = document.getElementById('mapRideList');
+        mainMapLayers.forEach(l => mainMap.removeLayer(l));
+        mainMapLayers = [];
+
+        if (rides.length === 0) {
+            list.innerHTML = `
+                <div class="empty-state">
+                    Пока нет поездок рядом с вами.<br>
+                    Создайте заявку — мы предупредим, когда кто-то поедет по вашему маршруту.
+                    <button class="btn btn-sm" onclick="switchScreen('createScreen')">Создать заявку</button>
+                </div>`;
+            return;
+        }
+
+        rides.forEach(ride => {
+            const color = ride.role === 'DRIVER' ? '#2196F3' : '#4CAF50';
+            const isRoute = ride.route && ride.route.length > 1;
+
+            if (isRoute) {
+                const line = L.polyline(ride.route.map(p => [p.lat, p.lon]), { color, weight: 3, opacity: 0.7 })
+                    .addTo(mainMap);
+                line.bindPopup(`<b>${roleEmoji(ride.role)} ${escapeHtml(ride.userName)}</b><br>Совпадение: ${Math.round(ride.score)}%`);
+                mainMapLayers.push(line);
+            } else {
+                const marker = L.marker([ride.fromLat, ride.fromLon]).addTo(mainMap);
+                marker.bindPopup(`<b>${roleEmoji(ride.role)} ${escapeHtml(ride.userName)}</b><br>Совпадение: ${Math.round(ride.score)}%`);
+                mainMapLayers.push(marker);
+            }
+
+            const card = document.createElement('div');
+            card.className = 'ride-card';
+            card.innerHTML = `
+                <div class="ride-header">
+                    <span class="role-icon">${roleEmoji(ride.role)}</span>
+                    <span class="role-name">${escapeHtml(ride.userName)}</span>
+                    <span class="score">🔥 ${Math.round(ride.score)}%</span>
+                </div>
+                <div class="time">${ride.departureTime ? escapeHtml(new Date(ride.departureTime).toLocaleString()) : 'Время не указано'}${ride.availableSeats ? ` · мест: ${ride.availableSeats}` : ''}</div>
+                ${ride.pricePerSeat ? `<div class="details">💰 ${ride.pricePerSeat} BYN за место</div>` : ''}
+                ${ride.note ? `<div class="details">${escapeHtml(ride.note)}</div>` : ''}
+            `;
+            const respondBtn = document.createElement('button');
+            respondBtn.className = 'btn btn-sm';
+            respondBtn.textContent = 'Откликнуться';
+            respondBtn.onclick = () => respondToRide(ride.id, respondBtn, ride);
+            card.appendChild(respondBtn);
+            list.appendChild(card);
+        });
+
+        if (mainMapLayers.length > 0) {
+            mainMap.fitBounds(L.featureGroup(mainMapLayers).getBounds().pad(0.2));
+        }
+    }
+
+    // ---------- Геокодинг ----------
 
     async function searchPlace(type) {
         const input = type === 'from' ? document.getElementById('fromInput') : document.getElementById('toInput');
@@ -758,6 +967,55 @@
         document.getElementById(type === 'from' ? 'searchFromResults' : 'searchToResults').innerHTML = '';
     }
 
+    // ---------- Промежуточные точки ----------
+
+    async function searchWaypoint() {
+        const query = document.getElementById('waypointInput').value.trim();
+        if (!query) return;
+        const resp = await fetch(`/api/geocoding?q=${encodeURIComponent(query)}`);
+        const places = await resp.json();
+        const resultsDiv = document.getElementById('waypointResults');
+        resultsDiv.innerHTML = '';
+        places.slice(0, 5).forEach(place => {
+            const item = document.createElement('div');
+            item.className = 'search-item';
+            item.innerHTML = `<div class="place-name">${escapeHtml(place.displayName)}</div>`;
+            item.onclick = () => {
+                waypointSearchResult = place;
+                document.getElementById('waypointInput').value = place.displayName;
+                resultsDiv.innerHTML = '';
+            };
+            resultsDiv.appendChild(item);
+        });
+    }
+
+    function addWaypoint(place) {
+        if (!place) place = waypointSearchResult;
+        if (!place) { showMessage('Сначала найдите или выберите точку', 'Подсказка'); return; }
+        if (waypoints.length >= 5) { showMessage('Максимум 5 промежуточных точек'); return; }
+        waypoints.push(place);
+        waypointSearchResult = null;
+        document.getElementById('waypointInput').value = '';
+        renderWaypoints();
+    }
+
+    function renderWaypoints() {
+        const list = document.getElementById('waypointsList');
+        list.innerHTML = '';
+        waypoints.forEach((wp, i) => {
+            const item = document.createElement('div');
+            item.className = 'waypoint-item';
+            item.innerHTML = `<span>📍 ${escapeHtml(wp.displayName)}</span>`;
+            const del = document.createElement('button');
+            del.textContent = '✕';
+            del.onclick = () => { waypoints.splice(i, 1); renderWaypoints(); };
+            item.appendChild(del);
+            list.appendChild(item);
+        });
+    }
+
+    // ---------- Создание заявки ----------
+
     async function createRideRequest() {
         if (!selectedFrom || !selectedTo) { showMessage('Выберите оба места'); return; }
         if (!currentUser || !currentUser.role) { showMessage('Сначала выберите роль'); return; }
@@ -768,9 +1026,18 @@
         const passengerCount = parseInt(document.getElementById('passengerCountSelect').value);
         let availableSeats = null;
         let timeFlexibility = 30;
+        let pricePerSeat = null;
         if (currentUser.role === 'DRIVER') {
             availableSeats = parseInt(document.getElementById('availableSeatsSelect').value);
             timeFlexibility = parseInt(document.getElementById('timeFlexibilitySelect').value);
+            const priceVal = document.getElementById('priceInput').value;
+            if (priceVal) {
+                pricePerSeat = parseFloat(priceVal);
+                if (isNaN(pricePerSeat) || pricePerSeat < 0) {
+                    showMessage('Цена должна быть числом не меньше нуля', 'Ошибка');
+                    return;
+                }
+            }
         }
         const note = document.getElementById('noteInput').value.trim();
 
@@ -790,7 +1057,9 @@
                 passengerCount: passengerCount,
                 availableSeats: availableSeats,
                 note: note,
-                timeFlexibilityMinutes: timeFlexibility
+                timeFlexibilityMinutes: timeFlexibility,
+                pricePerSeat: pricePerSeat,
+                waypoints: waypoints.map(wp => ({ lat: wp.latitude, lon: wp.longitude }))
             })
         });
         if (resp.ok) {
@@ -800,11 +1069,16 @@
             document.getElementById('myRideInfo').innerHTML = `
                 <strong>Маршрут:</strong> ${escapeHtml(selectedFrom.displayName)} → ${escapeHtml(selectedTo.displayName)}<br>
                 <strong>Время:</strong> ${escapeHtml(new Date(departureTime).toLocaleString())}<br>
-                ${currentUser.role === 'DRIVER' ? `<strong>Свободные места:</strong> ${escapeHtml(availableSeats)}<br><strong>Отклонение времени:</strong> ±${escapeHtml(timeFlexibility)} мин` : `<strong>Пассажиров:</strong> ${escapeHtml(passengerCount)}`}
+                ${currentUser.role === 'DRIVER' ? `<strong>Свободные места:</strong> ${escapeHtml(availableSeats)}${pricePerSeat ? ` · <strong>Цена:</strong> ${pricePerSeat} BYN/место` : ''}<br><strong>Отклонение времени:</strong> ±${escapeHtml(timeFlexibility)} мин` : `<strong>Пассажиров:</strong> ${escapeHtml(passengerCount)}`}
                 ${note ? `<br><strong>Комментарий:</strong> ${escapeHtml(note)}` : ''}
             `;
             showMessage('Заявка создана!');
-            searchMatches(selectedFrom.latitude, selectedFrom.longitude, selectedTo.latitude, selectedTo.longitude, departureTime, timeFlexibility);
+            searchMatches(
+                selectedFrom.latitude, selectedFrom.longitude,
+                selectedTo.latitude, selectedTo.longitude,
+                departureTime, timeFlexibility, 5000,
+                document.getElementById('matchesList')
+            );
         } else {
             showMessage(await resp.text(), 'Ошибка');
         }
@@ -822,20 +1096,31 @@
             document.getElementById('myRide').classList.add('hidden');
             document.getElementById('matchesBlock').classList.add('hidden');
             selectedFrom = selectedTo = null;
+            waypoints = [];
+            renderWaypoints();
             document.getElementById('fromSelected').classList.add('hidden');
             document.getElementById('toSelected').classList.add('hidden');
             document.getElementById('fromInput').value = '';
             document.getElementById('toInput').value = '';
             document.getElementById('departureTimeInput').value = '';
             document.getElementById('noteInput').value = '';
+            document.getElementById('priceInput').value = '';
             showMessage('Заявка отменена');
         } else {
             showMessage(await resp.text(), 'Ошибка');
         }
     }
 
-    async function searchMatches(fromLat, fromLon, toLat, toLon, departureTime = null, flexibilityMinutes = 30) {
-        const radius = parseInt(document.getElementById('radiusSelect').value);
+    // ---------- Поиск и матчи ----------
+
+    async function searchMatches(fromLat, fromLon, toLat, toLon, departureTime = null, flexibilityMinutes = 30, radius = null, listEl = null, containerEl = null) {
+        if (radius === null) {
+            const radiusSelect = document.getElementById('radiusSelect');
+            radius = parseInt(radiusSelect.value);
+        }
+        if (!listEl) listEl = document.getElementById('matchesList');
+        if (containerEl === null) containerEl = document.getElementById('matchesBlock');
+
         let url = `/api/rides/matches?role=${currentUser.role}&fromLat=${fromLat}&fromLon=${fromLon}&toLat=${toLat}&toLon=${toLon}&fromRadiusMeters=${radius}&toRadiusMeters=${radius}&flexibilityMinutes=${flexibilityMinutes}&limit=10`;
         if (departureTime) {
             url += `&departureTime=${encodeURIComponent(departureTime)}`;
@@ -844,18 +1129,16 @@
             headers: { 'X-Telegram-Init-Data': tgInitData }
         });
         const matches = await resp.json();
-        const container = document.getElementById('matchesBlock');
-        const list = document.getElementById('matchesList');
-        container.classList.remove('hidden');
-        list.innerHTML = '';
+        containerEl.classList.remove('hidden');
+        listEl.innerHTML = '';
         if (matches.length === 0) {
-            list.innerHTML = '<p>Пока нет подходящих попутчиков</p>';
+            listEl.innerHTML = '<p>Пока нет подходящих попутчиков</p>';
             return;
         }
         matches.forEach(match => {
             const card = document.createElement('div');
             card.className = 'match-item';
-            const roleEmoji = match.role === 'PASSENGER' ? '🚶' : '🚗';
+            const roleStr = roleEmoji(match.role) + ' ' + escapeHtml(match.userName);
             const timeStr = match.departureTime ? new Date(match.departureTime).toLocaleString() : 'Время не указано';
             const seatsInfo = match.availableSeats ? ` · Свободных мест: ${match.availableSeats}` : (match.passengerCount ? ` · Пассажиров: ${match.passengerCount}` : '');
             let vehicleInfo = '';
@@ -867,18 +1150,18 @@
                 scoreInfo = `<div class="score">🔥 Совпадение: ${Math.round(match.score)}%</div>`;
             }
             card.innerHTML = `
-                <strong>${roleEmoji} ${escapeHtml(match.userName)}</strong>
+                <strong>${roleStr}</strong>
                 ${vehicleInfo}
                 ${scoreInfo}
-                <div class="route">${escapeHtml(match.fromLat.toFixed(2))},${escapeHtml(match.fromLon.toFixed(2))} → ${escapeHtml(match.toLat.toFixed(2))},${escapeHtml(match.toLon.toFixed(2))}</div>
                 <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsInfo)}</div>
+                ${match.pricePerSeat ? `<div class="details">💰 ${match.pricePerSeat} BYN за место</div>` : ''}
                 ${match.note ? `<div class="details">${escapeHtml(match.note)}</div>` : ''}
             `;
             const respondBtn = document.createElement('button');
             respondBtn.className = 'btn btn-sm';
             respondBtn.textContent = 'Откликнуться';
             respondBtn.onclick = async () => {
-                await respondToRide(match.id, respondBtn);
+                await respondToRide(match.id, respondBtn, match);
             };
             card.appendChild(respondBtn);
             const reportBtn = document.createElement('button');
@@ -914,18 +1197,29 @@
                 }
             };
             card.appendChild(blockBtn);
-            list.appendChild(card);
+            listEl.appendChild(card);
         });
     }
 
-    async function respondToRide(rideId, btn) {
-        const resp = await fetch(`/api/matches/${rideId}/respond`, {
+    async function respondToRide(rideId, btn, match = null) {
+        let seatsParam = '';
+        if (match && match.role === 'DRIVER' && match.availableSeats && match.availableSeats > 1) {
+            const seats = prompt(`Сколько мест забронировать? (1–${match.availableSeats})`, '1');
+            if (seats === null) return;
+            const n = parseInt(seats);
+            if (isNaN(n) || n < 1 || n > match.availableSeats) {
+                showMessage(`Укажите число от 1 до ${match.availableSeats}`, 'Ошибка');
+                return;
+            }
+            seatsParam = `?seats=${n}`;
+        }
+        const resp = await fetch(`/api/matches/${rideId}/respond${seatsParam}`, {
             method: 'POST',
             headers: { 'X-Telegram-Init-Data': tgInitData }
         });
         if (resp.ok) {
             const result = await resp.json();
-            showMessage(result.message);
+            showMessage(result.message || 'Запрос брони отправлен');
             btn.textContent = 'Отправлено';
             btn.disabled = true;
         } else {
@@ -956,14 +1250,14 @@
             const statusClass = ride.status.toLowerCase();
             const timeStr = ride.departureTime ? new Date(ride.departureTime).toLocaleString() : 'Время не указано';
             const seatsInfo = ride.availableSeats ? ` · Свободных мест: ${ride.availableSeats}` : (ride.passengerCount ? ` · Пассажиров: ${ride.passengerCount}` : '');
+            const priceInfo = ride.pricePerSeat ? ` · 💰 ${ride.pricePerSeat} BYN/место` : '';
             card.innerHTML = `
                 <div class="ride-header">
                     <span class="role-icon">${roleIcon}</span>
                     <span class="role-name">${escapeHtml(ride.role === 'PASSENGER' ? 'Пассажир' : 'Водитель')}</span>
                     <span class="status-badge ${statusClass}">${escapeHtml(ride.status)}</span>
                 </div>
-                <div class="route">${escapeHtml(ride.fromLat.toFixed(2))},${escapeHtml(ride.fromLon.toFixed(2))} → ${escapeHtml(ride.toLat.toFixed(2))},${escapeHtml(ride.toLon.toFixed(2))}</div>
-                <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsInfo)}</div>
+                <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsInfo)}${escapeHtml(priceInfo)}</div>
                 ${ride.note ? `<div class="details">${escapeHtml(ride.note)}</div>` : ''}
             `;
             const actions = document.createElement('div');
@@ -1012,19 +1306,14 @@
                 reviewBtn.className = 'btn btn-sm btn-secondary';
                 reviewBtn.textContent = 'Оставить отзыв';
                 reviewBtn.onclick = async () => {
-                    const resp = await fetch(`/api/matches/for-request?rideRequestId=${ride.id}`, {
+                    const resp = await fetch(`/api/reviews/counterparty/${ride.id}`, {
                         headers: { 'X-Telegram-Init-Data': tgInitData }
                     });
                     if (resp.ok) {
-                        const matches = await resp.json();
-                        const acceptedMatch = matches.find(m => m.id === ride.acceptedMatchId);
-                        if (acceptedMatch) {
-                            openReviewModal(ride.id, acceptedMatch.responderTelegramId);
-                        } else {
-                            showMessage('Не удалось найти собеседника', 'Ошибка');
-                        }
+                        const counterpartyId = Number(await resp.json());
+                        openReviewModal(ride.id, counterpartyId);
                     } else {
-                        showMessage('Не удалось загрузить отклики', 'Ошибка');
+                        showMessage(await resp.text(), 'Ошибка');
                     }
                 };
                 actions.appendChild(reviewBtn);
@@ -1052,12 +1341,13 @@
             const item = document.createElement('div');
             item.className = 'match-item';
             let contactInfo = '';
-            if (match.status === 'ACCEPTED' && match.contactUsername) {
+            if (match.status === 'CONFIRMED' && match.contactUsername) {
                 contactInfo = `<div class="contact">📞 @${escapeHtml(match.contactUsername)}</div>`;
             }
+            const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
             item.innerHTML = `
                 <div class="responder">${escapeHtml(match.responderName)}</div>
-                <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}</span>
+                <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}${escapeHtml(seatsNote)}</span>
                 <div class="time">${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
                 ${contactInfo}
             `;
@@ -1066,7 +1356,12 @@
                 acceptBtn.className = 'btn btn-sm';
                 acceptBtn.textContent = 'Принять';
                 acceptBtn.onclick = async () => {
-                    await fetch(`/api/matches/${match.id}/accept`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    const resp2 = await fetch(`/api/matches/${match.id}/accept`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    if (resp2.ok) {
+                        showMessage('Бронь принята. Ждём подтверждения от второй стороны.');
+                    } else {
+                        showMessage(await resp2.text(), 'Ошибка');
+                    }
                     loadResponsesForRide(rideId);
                 };
                 const rejectBtn = document.createElement('button');
@@ -1078,7 +1373,18 @@
                 };
                 item.appendChild(acceptBtn);
                 item.appendChild(rejectBtn);
-            } else if (match.status === 'ACCEPTED') {
+            } else if (match.status === 'CONFIRMING') {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'btn btn-sm btn-secondary';
+                cancelBtn.textContent = 'Отменить бронь';
+                cancelBtn.onclick = async () => {
+                    if (confirm('Отменить бронь? Места вернутся в пул.')) {
+                        await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                        loadResponsesForRide(rideId);
+                    }
+                };
+                item.appendChild(cancelBtn);
+            } else if (match.status === 'CONFIRMED') {
                 const chatBtn = document.createElement('button');
                 chatBtn.className = 'btn btn-sm btn-secondary';
                 chatBtn.textContent = 'Чат';
@@ -1105,17 +1411,43 @@
             const item = document.createElement('div');
             item.className = 'match-item';
             let contactInfo = '';
-            if (match.status === 'ACCEPTED' && match.contactUsername) {
+            if (match.status === 'CONFIRMED' && match.contactUsername) {
                 contactInfo = `<div class="contact">📞 @${escapeHtml(match.contactUsername)}</div>`;
             }
+            const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
             item.innerHTML = `
                 <div class="responder">Заявка #${escapeHtml(match.rideRequestId)}</div>
                 <div>Вы откликнулись: ${escapeHtml(match.responderName)}</div>
-                <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}</span>
+                <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}${escapeHtml(seatsNote)}</span>
                 <div class="time">${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
                 ${contactInfo}
             `;
-            if (match.status === 'ACCEPTED') {
+            if (match.status === 'PENDING') {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'btn btn-sm btn-secondary';
+                cancelBtn.textContent = 'Отменить отклик';
+                cancelBtn.onclick = async () => {
+                    await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    loadMyResponses();
+                };
+                item.appendChild(cancelBtn);
+            }
+            if (match.status === 'CONFIRMING') {
+                const confirmBtn = document.createElement('button');
+                confirmBtn.className = 'btn btn-sm';
+                confirmBtn.textContent = '✅ Подтвердить бронь';
+                confirmBtn.onclick = async () => {
+                    const resp2 = await fetch(`/api/matches/${match.id}/confirm`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    if (resp2.ok) {
+                        showMessage('Бронь подтверждена! Контакты в приложении.');
+                    } else {
+                        showMessage(await resp2.text(), 'Ошибка');
+                    }
+                    loadMyResponses();
+                };
+                item.appendChild(confirmBtn);
+            }
+            if (match.status === 'CONFIRMED') {
                 const chatBtn = document.createElement('button');
                 chatBtn.className = 'btn btn-sm btn-secondary';
                 chatBtn.textContent = 'Чат';
@@ -1125,6 +1457,8 @@
             list.appendChild(item);
         });
     }
+
+    // ---------- Чаты ----------
 
     async function loadChats() {
         const [ridesResp, responsesResp] = await Promise.all([
@@ -1142,7 +1476,7 @@
             }
         });
         responses.forEach(match => {
-            if (match.status === 'ACCEPTED' || match.status === 'COMPLETED') {
+            if (match.status === 'CONFIRMED' || match.status === 'COMPLETED') {
                 chats.push({ matchId: match.id, rideRequestId: match.rideRequestId, interlocutorName: match.contactUsername ? '@' + match.contactUsername : 'Собеседник' });
             }
         });
@@ -1226,39 +1560,96 @@
         if (!currentUser?.role) { showMessage('Выберите роль'); return; }
         if (!searchFrom || !searchTo) { showMessage('Выберите оба места'); return; }
         const departureTime = document.getElementById('searchDepartureTimeInput').value;
-        await searchMatches(searchFrom.latitude, searchFrom.longitude, searchTo.latitude, searchTo.longitude, departureTime || null, 30);
+        const listEl = document.getElementById('searchMatchesList');
+        const containerEl = document.getElementById('searchMatchesBlock');
+        await searchMatches(
+            searchFrom.latitude, searchFrom.longitude,
+            searchTo.latitude, searchTo.longitude,
+            departureTime || null, 30,
+            parseInt(document.getElementById('radiusSelect').value),
+            listEl, containerEl
+        );
     }
+
+    // ---------- Подписки на маршруты ----------
+
+    async function loadSubscriptions() {
+        const resp = await fetch('/api/subscriptions', { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!resp.ok) return;
+        const subs = await resp.json();
+        const list = document.getElementById('subsList');
+        list.innerHTML = '';
+        if (subs.length === 0) {
+            list.innerHTML = '<p class="empty-state">Подписок нет. Сохраните маршрут — и мы напишем, когда кто-то поедет по нему.</p>';
+            return;
+        }
+        subs.forEach(sub => {
+            const item = document.createElement('div');
+            item.className = 'waypoint-item';
+            item.innerHTML = `<span>📍 ${sub.fromLat.toFixed(3)}, ${sub.fromLon.toFixed(3)} → ${sub.toLat.toFixed(3)}, ${sub.toLon.toFixed(3)} · радиус ${sub.radiusMeters / 1000} км</span>`;
+            const del = document.createElement('button');
+            del.textContent = '✕';
+            del.onclick = async () => {
+                await fetch(`/api/subscriptions/${sub.id}`, { method: 'DELETE', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                loadSubscriptions();
+            };
+            item.appendChild(del);
+            list.appendChild(item);
+        });
+    }
+
+    function subscribeFromCurrent() {
+        if (!selectedFrom || !selectedTo) {
+            showMessage('Сначала заполните маршрут на экране поиска', 'Подписка');
+            return;
+        }
+        fetch('/api/subscriptions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
+            body: JSON.stringify({
+                fromLat: selectedFrom.latitude, fromLon: selectedFrom.longitude,
+                toLat: selectedTo.latitude, toLon: selectedTo.longitude,
+                radiusMeters: parseInt(document.getElementById('radiusSelect').value)
+            })
+        }).then(r => {
+            if (r.ok) { showMessage('Подписка создана! Уведомим, когда появится поездка.'); loadSubscriptions(); }
+            else showMessage(r.statusText, 'Ошибка');
+        });
+    }
+
+    // ---------- Модалка карты ----------
 
     function openMapModal(mode) {
         choosingFor = mode;
         document.getElementById('mapModal').classList.add('active');
-        const titleMap = { from: 'Откуда', to: 'Куда', 'search-from': 'Откуда', 'search-to': 'Куда', route: 'Маршрут' };
+        const titleMap = { from: 'Откуда', to: 'Куда', 'search-from': 'Откуда', 'search-to': 'Куда', waypoint: 'Точка по пути' };
         document.getElementById('mapModalTitle').textContent = titleMap[mode] || 'Выберите точку';
         setTimeout(() => {
             if (!map) {
-                map = L.map('mapContainer').setView([53.9, 27.56], 11);
+                map = L.map('mapContainer', {
+                    center: [53.9, 27.56],
+                    zoom: 11,
+                    attributionControl: true
+                });
+                map.attributionControl.setPrefix(false); // без флага и «Leaflet |»
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap contributors'
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 19
                 }).addTo(map);
                 map.on('click', (e) => {
-                    if (choosingFor === 'route') return;
                     setTempMarker(e.latlng.lat, e.latlng.lng);
                 });
             } else {
                 map.invalidateSize();
             }
-            if (choosingFor === 'route') {
-                showRouteOnMap(searchFrom, searchTo);
-            } else {
-                let existing = null;
-                if (choosingFor === 'from') existing = selectedFrom;
-                else if (choosingFor === 'to') existing = selectedTo;
-                else if (choosingFor === 'search-from') existing = searchFrom;
-                else if (choosingFor === 'search-to') existing = searchTo;
-                if (existing) {
-                    setTempMarker(existing.latitude, existing.longitude);
-                    map.setView([existing.latitude, existing.longitude], 11);
-                }
+            let existing = null;
+            if (choosingFor === 'from') existing = selectedFrom;
+            else if (choosingFor === 'to') existing = selectedTo;
+            else if (choosingFor === 'search-from') existing = searchFrom;
+            else if (choosingFor === 'search-to') existing = searchTo;
+            if (existing) {
+                setTempMarker(existing.latitude, existing.longitude);
+                map.setView([existing.latitude, existing.longitude], 11);
             }
         }, 100);
     }
@@ -1298,8 +1689,7 @@
                     latitude: selectedMapPoint.lat,
                     longitude: selectedMapPoint.lon
                 };
-                assignPlace(choosingFor, place);
-                closeMapModal();
+                handleMapPoint(place);
             })
             .catch(() => {
                 const place = {
@@ -1307,9 +1697,18 @@
                     latitude: selectedMapPoint.lat,
                     longitude: selectedMapPoint.lon
                 };
-                assignPlace(choosingFor, place);
-                closeMapModal();
+                handleMapPoint(place);
             });
+    }
+
+    function handleMapPoint(place) {
+        if (choosingFor === 'waypoint') {
+            addWaypoint(place);
+            closeMapModal();
+            return;
+        }
+        assignPlace(choosingFor, place);
+        closeMapModal();
     }
 
     function assignPlace(type, place) {
@@ -1336,16 +1735,7 @@
         }
     }
 
-    function showRouteOnMap(from, to) {
-        if (!from || !to) return;
-        if (tempMarker) map.removeLayer(tempMarker);
-        L.marker([from.latitude, from.longitude]).addTo(map).bindPopup('Откуда');
-        L.marker([to.latitude, to.longitude]).addTo(map).bindPopup('Куда');
-        L.polyline([[from.latitude, from.longitude], [to.latitude, to.longitude]], {
-            color: 'blue', weight: 3
-        }).addTo(map);
-        map.fitBounds([[from.latitude, from.longitude], [to.latitude, to.longitude]]);
-    }
+    // ---------- Отзывы ----------
 
     function openReviewModal(rideRequestId, targetTelegramId) {
         reviewRideRequestId = rideRequestId;
@@ -1388,13 +1778,15 @@
         }
     }
 
+    // ---------- Профиль ----------
+
     function openProfileModal() {
         if (!currentUser) return;
-        document.getElementById('profileName').textContent = currentUser.firstName + ' ' + (currentUser.lastName || '');
+        document.getElementById('profileName').textContent = (currentUser.firstName || '') + ' ' + (currentUser.lastName || '');
         document.getElementById('profileUsername').textContent = currentUser.username || 'не указан';
         document.getElementById('profileRating').textContent = currentUser.rating ? currentUser.rating.toFixed(1) : 'нет';
         document.getElementById('profileTripCount').textContent = currentUser.tripCount || 0;
-        document.getElementById('profileRole').textContent = currentUser.role === 'PASSENGER' ? 'Пассажир' : 'Водитель';
+        document.getElementById('profileRole').textContent = currentUser.role === 'PASSENGER' ? 'Пассажир' : (currentUser.role === 'DRIVER' ? 'Водитель' : 'не выбрана');
 
         const vehicleFields = document.getElementById('vehicleFields');
         if (currentUser.role === 'DRIVER') {

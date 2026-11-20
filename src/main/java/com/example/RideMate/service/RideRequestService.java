@@ -4,13 +4,16 @@ import com.example.RideMate.dto.RideRequestCreateRequest;
 import com.example.RideMate.dto.RideRequestDTO;
 import com.example.RideMate.dto.RideRequestMatchDTO;
 import com.example.RideMate.dto.RideRequestResponseDTO;
+import com.example.RideMate.dto.RoutePointDTO;
 import com.example.RideMate.entity.*;
 import com.example.RideMate.repository.MatchRepository;
 import com.example.RideMate.repository.RideRequestRepository;
+import com.example.RideMate.repository.RouteSubscriptionRepository;
 import com.example.RideMate.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.Point;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -31,21 +34,12 @@ public class RideRequestService {
     private final TelegramBotService telegramBotService;
     private final VehicleService vehicleService;
     private final MatchRepository matchRepository;
-    private final GeometryFactory geometryFactory = new GeometryFactory();
+    private final GeometryFactory geometryFactory; // бин с SRID 4326 из GeoConfig
+
+    private final RouteSubscriptionRepository routeSubscriptionRepository;
 
     @Transactional
     public RideRequestResponseDTO createRequest(RideRequestCreateRequest request, Long telegramId) {
-        System.out.println("=== Создание заявки ===");
-        System.out.println("telegramId=" + telegramId);
-        System.out.println("role=" + request.role());
-        System.out.println("fromLat=" + request.fromLat() + ", fromLon=" + request.fromLon());
-        System.out.println("toLat=" + request.toLat() + ", toLon=" + request.toLon());
-        System.out.println("departureTime=" + request.departureTime());
-        System.out.println("passengerCount=" + request.passengerCount());
-        System.out.println("availableSeats=" + request.availableSeats());
-        System.out.println("note=" + request.note());
-        System.out.println("timeFlexibilityMinutes=" + request.timeFlexibilityMinutes());
-
         User user = userRepository.findByTelegramId(telegramId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
@@ -74,21 +68,49 @@ public class RideRequestService {
                 request.timeFlexibilityMinutes() != null ? request.timeFlexibilityMinutes() : 30
         );
 
-        RideRequest saved = rideRequestRepository.save(rideRequest);
-        System.out.println("Заявка сохранена, id=" + saved.getId());
+        // Маршрут водителя: from → waypoints → to
+        if (request.role() == Role.DRIVER && request.waypoints() != null && !request.waypoints().isEmpty()) {
+            Coordinate[] coords = new Coordinate[request.waypoints().size() + 2];
+            coords[0] = new Coordinate(request.fromLon(), request.fromLat());
+            int i = 1;
+            for (RoutePointDTO wp : request.waypoints()) {
+                coords[i++] = new Coordinate(wp.lon(), wp.lat());
+            }
+            coords[i] = new Coordinate(request.toLon(), request.toLat());
+            LineString route = geometryFactory.createLineString(coords);
+            rideRequest.setRoute(route);
+        }
 
-        // Поиск совместимых заявок противоположной роли
+
+        if (request.role() == Role.DRIVER && request.pricePerSeat() != null) {
+            if (request.pricePerSeat().compareTo(java.math.BigDecimal.ZERO) < 0) {
+                throw new RuntimeException("Цена не может быть отрицательной");
+            }
+            if (request.pricePerSeat().compareTo(new java.math.BigDecimal("500")) > 0) {
+                throw new RuntimeException("Цена выглядит некорректной (максимум 500 BYN)");
+            }
+            rideRequest.setPricePerSeat(request.pricePerSeat());
+        }
+
+
+        RideRequest saved = rideRequestRepository.save(rideRequest);
+
+        if (request.role() == Role.DRIVER) {
+            notifySubscribers(saved, user);
+        }
+
+
+
+
+        // Поиск совместимых заявок противоположной роли для мгновенных уведомлений
         Role oppositeRole = (request.role() == Role.PASSENGER) ? Role.DRIVER : Role.PASSENGER;
-        System.out.println("Поиск совместимых для oppositeRole=" + oppositeRole.name());
         List<RideRequest> compatible = rideRequestRepository.findCompatibleRequests(
                 oppositeRole.name(),
                 request.fromLat(), request.fromLon(),
                 request.toLat(), request.toLon(),
                 5000, 5000, 10
         );
-        System.out.println("Найдено совместимых заявок: " + compatible.size());
 
-        // Отправка уведомлений
         for (RideRequest r : compatible) {
             Long chatId = r.getUser().getChatId();
             if (chatId != null && !r.getUser().getTelegramId().equals(telegramId)) {
@@ -101,11 +123,33 @@ public class RideRequestService {
                         request.departureTime() != null ? request.departureTime().toString() : "не указано"
                 );
                 telegramBotService.sendMessage(chatId, message);
-                System.out.println("Отправлено уведомление пользователю с chatId=" + chatId);
             }
         }
 
         return toDTO(saved);
+    }
+
+
+
+
+    private void notifySubscribers(RideRequest ride, User driver) {
+        List<RouteSubscription> subs = routeSubscriptionRepository.findMatchingSubscriptions(
+                ride.getFromLocation().getY(), ride.getFromLocation().getX(),
+                ride.getToLocation().getY(), ride.getToLocation().getX());
+        for (RouteSubscription sub : subs) {
+            User subscriber = sub.getUser();
+            if (subscriber.getTelegramId().equals(driver.getTelegramId())) continue;
+            Long chatId = subscriber.getChatId();
+            if (chatId != null) {
+                telegramBotService.sendMessage(chatId, String.format(
+                        "🔔 Новая поездка по вашему маршруту!\n%s %s\n%s → %s\n%s",
+                        driver.getFirstName(),
+                        driver.getLastName() != null ? driver.getLastName() : "",
+                        "от заданной точки", "к заданной точке",
+                        ride.getDepartureTime() != null ? ride.getDepartureTime().toString() : "время уточняется"
+                ));
+            }
+        }
     }
 
     public List<RideRequestDTO> getUserRequests(Long telegramId, RideStatus status) {
@@ -123,6 +167,12 @@ public class RideRequestService {
                 .toList();
     }
 
+    /**
+     * Поиск совместимых заявок.
+     *
+     * @param role            роль ТЕХ, КОГО ищем (для пассажира — DRIVER, для водителя — PASSENGER)
+     * @param myRideRequestId id своей активной заявки (для водителя — чтобы взять его маршрут); может быть null
+     */
     public List<RideRequestMatchDTO> findCompatibleAsDTO(
             Role role,
             double fromLat, double fromLon,
@@ -130,32 +180,58 @@ public class RideRequestService {
             double fromRadiusMeters, double toRadiusMeters,
             LocalDateTime departureTime,
             int limit,
-            int flexibilityMinutes
+            int flexibilityMinutes,
+            Long myRideRequestId
     ) {
-        System.out.println("=== Поиск совместимых (DTO) ===");
-        System.out.println("role=" + role + ", fromLat=" + fromLat + ", fromLon=" + fromLon + ", toLat=" + toLat + ", toLon=" + toLon);
-        System.out.println("departureTime=" + departureTime);
-        System.out.println("flexibilityMinutes=" + flexibilityMinutes);
+        List<RideRequest> requests;
 
-        List<RideRequest> requests = rideRequestRepository.findCompatibleRequests(
-                role.name(), fromLat, fromLon, toLat, toLon,
-                fromRadiusMeters, toRadiusMeters, limit
-        );
-        System.out.println("Найдено заявок по координатам: " + requests.size());
+        if (role == Role.DRIVER) {
+            // Ищет пассажир: сначала заявки водителей «по пути», затем точка-в-точку как резерв
+            requests = rideRequestRepository.findRequestsAlongRoute(
+                    fromLat, fromLon, toLat, toLon, fromRadiusMeters, toRadiusMeters, limit);
+            if (requests.size() < 3) {
+                List<RideRequest> fallback = rideRequestRepository.findCompatibleRequests(
+                        role.name(), fromLat, fromLon, toLat, toLon,
+                        fromRadiusMeters, toRadiusMeters, limit);
+                // объединяем без дублей, приоритет у маршрутных
+                var seen = new java.util.HashSet<Long>();
+                var merged = new java.util.ArrayList<RideRequest>();
+                for (RideRequest r : requests) {
+                    if (seen.add(r.getId())) merged.add(r);
+                }
+                for (RideRequest r : fallback) {
+                    if (seen.add(r.getId())) merged.add(r);
+                }
+                requests = merged.stream().limit(limit).toList();
+            }
+        } else {
+            // Ищет водитель: пассажиры рядом с его маршрутом (если маршрут задан) или точечно
+            RideRequest myRide = null;
+            if (myRideRequestId != null) {
+                myRide = rideRequestRepository.findById(myRideRequestId).orElse(null);
+            }
+            if (myRide != null && myRide.getRoute() != null) {
+                requests = rideRequestRepository.findPassengersAlongRoute(
+                        myRide.getRoute(), fromRadiusMeters, toRadiusMeters, limit);
+            } else {
+                requests = rideRequestRepository.findCompatibleRequests(
+                        role.name(), fromLat, fromLon, toLat, toLon,
+                        fromRadiusMeters, toRadiusMeters, limit);
+            }
+        }
 
         List<RideRequest> filtered = requests.stream()
                 .filter(r -> r.getDepartureTime() == null || departureTime == null ||
-                        Math.abs(Duration.between(r.getDepartureTime(), departureTime).toMinutes()) <= flexibilityMinutes)
+                        Math.abs(Duration.between(r.getDepartureTime(), departureTime).toMinutes())
+                                <= Math.max(flexibilityMinutes,
+                                r.getTimeFlexibilityMinutes() != null ? r.getTimeFlexibilityMinutes() : 0))
                 .filter(r -> {
                     if (role == Role.PASSENGER) {
                         return r.getAvailableSeats() != null && r.getAvailableSeats() > 0;
-                    } else {
-                        return true;
                     }
+                    return true;
                 })
                 .toList();
-
-        System.out.println("После фильтрации: " + filtered.size());
 
         return filtered.stream()
                 .map(r -> toMatchDTO(r, fromLat, fromLon, departureTime))
@@ -165,13 +241,10 @@ public class RideRequestService {
 
     @Transactional
     public void cancelRequest(Long telegramId, Long requestId) {
-        System.out.println("=== Отмена заявки ===");
-        System.out.println("telegramId=" + telegramId + ", requestId=" + requestId);
         int updated = rideRequestRepository.cancelRequest(requestId, telegramId);
         if (updated == 0) {
             throw new RuntimeException("Заявка не найдена или вы не можете её отменить");
         }
-        System.out.println("Заявка отменена");
     }
 
     private RideRequestResponseDTO toDTO(RideRequest rideRequest) {
@@ -212,6 +285,14 @@ public class RideRequestService {
                 r.getFromLocation().getY(), r.getFromLocation().getX());
         score -= Math.min(dist / 1000.0 * 0.4, 20);
 
+        // Штраф за отклонение точек заявки от маршрута водителя
+        if (r.getRoute() != null) {
+            double dev = Math.min(
+                    deviationMeters(r.getFromLocation(), r.getRoute()),
+                    deviationMeters(r.getToLocation(), r.getRoute()));
+            score -= Math.min(dev / 1000.0 * 0.5, 25);
+        }
+
         if (r.getDepartureTime() != null && requestTime != null) {
             long diffMin = Math.abs(Duration.between(r.getDepartureTime(), requestTime).toMinutes());
             score -= Math.min(diffMin * 0.2, 20);
@@ -243,8 +324,27 @@ public class RideRequestService {
                 vehicleColor,
                 vehicleSeats,
                 r.getTimeFlexibilityMinutes(),
-                score
+                score,
+                r.getPricePerSeat()
         );
+    }
+
+    /**
+     * Приближённое расстояние от точки до маршрута (в метрах).
+     * Считаем по ближайшей вершине полилинии — для скоринга MVP достаточно.
+     */
+    private double deviationMeters(Point p, LineString route) {
+        if (p == null || route == null) return 0;
+        double metersPerDegLat = 111_320.0;
+        double metersPerDegLon = 111_320.0 * Math.cos(Math.toRadians(p.getY()));
+        double best = Double.MAX_VALUE;
+        for (Coordinate c : route.getCoordinates()) {
+            double dx = (p.getX() - c.x) * metersPerDegLon;
+            double dy = (p.getY() - c.y) * metersPerDegLat;
+            double d = Math.sqrt(dx * dx + dy * dy);
+            if (d < best) best = d;
+        }
+        return best;
     }
 
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
@@ -273,7 +373,8 @@ public class RideRequestService {
                 r.getTimeFlexibilityMinutes(),
                 r.getStatus().name(),
                 r.getCreatedAt(),
-                r.getAcceptedMatchId()
+                r.getAcceptedMatchId(),
+                r.getPricePerSeat()
         );
     }
 
@@ -286,6 +387,12 @@ public class RideRequestService {
         }
         if (rideRequest.getStatus() != RideStatus.MATCHED) {
             throw new RuntimeException("Поездка не находится в статусе MATCHED");
+        }
+        if (rideRequest.getAcceptedMatchId() != null) {
+            Match match = matchRepository.findById(rideRequest.getAcceptedMatchId()).orElse(null);
+            if (match == null || match.getStatus() != MatchStatus.CONFIRMED) {
+                throw new RuntimeException("Бронь не подтверждена");
+            }
         }
 
         rideRequest.setStatus(RideStatus.COMPLETED);
@@ -311,8 +418,7 @@ public class RideRequestService {
     @Scheduled(fixedRate = 60000)
     @Transactional
     public void expireOldRequests() {
-        LocalDateTime now = LocalDateTime.now();
-        List<RideRequest> expired = rideRequestRepository.findByStatusAndDepartureTimeBefore(RideStatus.ACTIVE, now);
+        List<RideRequest> expired = rideRequestRepository.findByStatusAndDepartureTimeBefore(RideStatus.ACTIVE, LocalDateTime.now());
         for (RideRequest r : expired) {
             r.setStatus(RideStatus.EXPIRED);
             rideRequestRepository.save(r);

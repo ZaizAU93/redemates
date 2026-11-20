@@ -14,6 +14,10 @@ public record RideRequestCreateRequest(
         Integer passengerCount,
         Integer availableSeats,
         String note,
-        Integer timeFlexibilityMinutes
+        Integer timeFlexibilityMinutes,
+        java.util.List<RoutePointDTO> waypoints,
+        java.math.BigDecimal pricePerSeat   // только для водителя, может быть null
+
+
 ) {
 }

@@ -1,6 +1,5 @@
 package com.example.RideMate.dto;
 
-
 import java.time.LocalDateTime;
 
 public record RideRequestDTO(
@@ -17,6 +16,8 @@ public record RideRequestDTO(
         Integer timeFlexibilityMinutes,
         String status,
         LocalDateTime createdAt,
-        Long acceptedMatchId
+        Long acceptedMatchId,
+        java.math.BigDecimal pricePerSeat   // только для водителя, может быть null
+
 ) {
 }

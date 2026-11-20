@@ -28,4 +28,14 @@ public class Match {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private MatchStatus status = MatchStatus.PENDING;
+
+    @Column(nullable = false)
+    private Integer seats = 1;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    @Column(name = "confirmed_at")
+    private LocalDateTime confirmedAt;
+
 }

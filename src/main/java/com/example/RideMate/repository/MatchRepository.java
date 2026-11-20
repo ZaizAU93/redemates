@@ -6,6 +6,7 @@ import com.example.RideMate.entity.Match;
 import com.example.RideMate.entity.MatchStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface MatchRepository extends JpaRepository<Match, Long> {
@@ -13,4 +14,7 @@ public interface MatchRepository extends JpaRepository<Match, Long> {
     List<Match> findByRideRequestId(Long rideRequestId);
     List<Match> findByResponderId(Long responderId);
     List<Match> findByRideRequestIdAndStatus(Long rideRequestId, MatchStatus status);
+
+    List<Match> findByStatusAndExpiresAtBefore(MatchStatus status, LocalDateTime time);
+
 }

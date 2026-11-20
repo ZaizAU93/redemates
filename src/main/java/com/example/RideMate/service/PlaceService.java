@@ -14,11 +14,13 @@ import java.util.List;
 public class PlaceService {
 
     private final PlaceRepository placeRepository;
-    private final GeometryFactory geometryFactory = new GeometryFactory();
+    private final GeometryFactory geometryFactory;
 
-    public PlaceService(PlaceRepository placeRepository) {
+    public PlaceService(PlaceRepository placeRepository, GeometryFactory geometryFactory) {
         this.placeRepository = placeRepository;
+        this.geometryFactory = geometryFactory;
     }
+
 
     public Place savePlace(LocationRequest request) {
         Place place = new Place();

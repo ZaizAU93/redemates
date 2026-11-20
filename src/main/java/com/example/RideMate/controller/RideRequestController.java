@@ -4,10 +4,15 @@ import com.example.RideMate.dto.RideRequestCreateRequest;
 import com.example.RideMate.dto.RideRequestDTO;
 import com.example.RideMate.dto.RideRequestMatchDTO;
 import com.example.RideMate.dto.RideRequestResponseDTO;
+import com.example.RideMate.entity.RideRequest;
 import com.example.RideMate.entity.RideStatus;
 import com.example.RideMate.entity.Role;
+import com.example.RideMate.entity.User;
+import com.example.RideMate.repository.RideRequestRepository;
 import com.example.RideMate.service.RideRequestService;
 import com.example.RideMate.service.TelegramAuthService;
+import com.example.RideMate.service.UserService;
+import lombok.Data;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,16 +22,16 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/rides")
 @CrossOrigin
+@Data
 public class RideRequestController {
 
     private final RideRequestService rideRequestService;
     private final TelegramAuthService authService;
 
-    public RideRequestController(RideRequestService rideRequestService,
-                                 TelegramAuthService authService) {
-        this.rideRequestService = rideRequestService;
-        this.authService = authService;
-    }
+    private final UserService userService;
+
+    private final RideRequestRepository rideRequestRepository;
+
 
     @PostMapping
     public RideRequestResponseDTO create(@RequestBody RideRequestCreateRequest request,
@@ -37,28 +42,44 @@ public class RideRequestController {
 
     @GetMapping("/matches")
     public List<RideRequestMatchDTO> findMatches(
-            @RequestParam Role role,
+            @RequestParam String role,
             @RequestParam double fromLat,
             @RequestParam double fromLon,
             @RequestParam double toLat,
             @RequestParam double toLon,
-            @RequestParam(required = false) String departureTime,
             @RequestParam(defaultValue = "5000") double fromRadiusMeters,
             @RequestParam(defaultValue = "5000") double toRadiusMeters,
-            @RequestParam(defaultValue = "30") int flexibilityMinutes,   // <-- добавлено
+            @RequestParam(required = false) String departureTime,
             @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(defaultValue = "30") int flexibilityMinutes,
             @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
-        authService.authenticate(initData);
-        Role oppositeRole = (role == Role.PASSENGER) ? Role.DRIVER : Role.PASSENGER;
-        LocalDateTime depTime = null;
-        if (departureTime != null && !departureTime.isEmpty()) {
-            depTime = LocalDateTime.parse(departureTime);
+
+        Long telegramId = authService.authenticate(initData);
+
+        LocalDateTime time = null;
+        if (departureTime != null && !departureTime.isBlank()) {
+            time = LocalDateTime.parse(departureTime);
         }
+
+        // id активной заявки текущего пользователя — для поиска «по пути» от лица водителя
+        Long myRideRequestId = null;
+        User user = userService.getUserByTelegramId(telegramId); // см. примечание ниже
+        RideRequest myRide = rideRequestRepository.findFirstByUserIdAndStatus(user.getId(), RideStatus.ACTIVE)
+                .orElse(null);
+        if (myRide != null) {
+            myRideRequestId = myRide.getId();
+        }
+
         return rideRequestService.findCompatibleAsDTO(
-                oppositeRole, fromLat, fromLon, toLat, toLon,
-                fromRadiusMeters, toRadiusMeters, depTime, limit, flexibilityMinutes  // <-- передача
+                Role.valueOf(role),
+                fromLat, fromLon,
+                toLat, toLon,
+                fromRadiusMeters, toRadiusMeters,
+                time, limit, flexibilityMinutes,
+                myRideRequestId
         );
     }
+
 
     @GetMapping("/my")
     public List<RideRequestDTO> getUserRequests(

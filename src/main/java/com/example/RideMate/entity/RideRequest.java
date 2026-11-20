@@ -2,8 +2,10 @@ package com.example.RideMate.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.Point;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -57,4 +59,12 @@ public class RideRequest {
 
     @Column(name = "time_flexibility_minutes")
     private Integer timeFlexibilityMinutes = 30; // по умолчанию 30 минут
+
+    @Column(name = "route", columnDefinition = "geography(LineString,4326)")
+    private LineString route;
+
+    @Column(name = "price_per_seat", precision = 10, scale = 2)
+    private BigDecimal pricePerSeat;
+
+
 }

@@ -50,4 +50,11 @@ public class UserService {
         user.setChatId(chatId);
         userRepository.save(user);
     }
+
+    @Transactional(readOnly = true)
+    public User getUserByTelegramId(Long telegramId) {
+        return userRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+    }
+
 }

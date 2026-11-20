@@ -1,7 +1,5 @@
 package com.example.RideMate.repository;
 
-
-
 import com.example.RideMate.entity.Review;
 import com.example.RideMate.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,12 +10,18 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
+
     List<Review> findByReviewed(User reviewed);
-    Optional<Review> findByRideRequestIdAndReviewerId(Long rideRequestId, Long reviewerId);
 
-    @Query("SELECT AVG(r.rating) FROM Review r WHERE r.reviewed = :user")
-    Double getAverageRating(@Param("user") User user);
+    @Query("SELECT r FROM Review r WHERE r.rideRequest.id = :rideRequestId AND r.reviewer.id = :reviewerId")
+    Optional<Review> findByRideRequestIdAndReviewerId(@Param("rideRequestId") Long rideRequestId,
+                                                      @Param("reviewerId") Long reviewerId);
 
-    @Query("SELECT COUNT(r) FROM Review r WHERE r.reviewed = :user")
-    long countByReviewed(@Param("user") User user);
+    boolean existsByRideRequestIdAndReviewerId(Long rideRequestId, Long reviewerId);
+
+    @Query("SELECT AVG(r.rating) FROM Review r WHERE r.reviewed.id = :userId")
+    Double getAverageRatingByUserId(@Param("userId") Long userId);
+
+    @Query("SELECT COUNT(r) FROM Review r WHERE r.reviewed.id = :userId")
+    long countByReviewedId(@Param("userId") Long userId);
 }
