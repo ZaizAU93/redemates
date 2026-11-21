@@ -2,6 +2,7 @@ package com.example.RideMate.service;
 
 import com.example.RideMate.dto.RideRequestCreateRequest;
 import com.example.RideMate.dto.RideRequestDTO;
+import com.example.RideMate.dto.RideRequestDetailsDTO;
 import com.example.RideMate.dto.RideRequestMatchDTO;
 import com.example.RideMate.dto.RideRequestResponseDTO;
 import com.example.RideMate.dto.RoutePointDTO;
@@ -47,60 +48,15 @@ public class RideRequestService {
         Optional<RideRequest> activeRequest = rideRequestRepository
                 .findFirstByUserIdAndStatus(user.getId(), RideStatus.ACTIVE);
         if (activeRequest.isPresent()) {
-            throw new RuntimeException("У вас уже есть активная заявка. Отмените её, чтобы создать новую.");
+            throw new RuntimeException("У вас уже есть активная заявка. Отмените её или отредактируйте.");
         }
 
-        RideRequest rideRequest = new RideRequest();
-        rideRequest.setUser(user);
-        rideRequest.setRole(request.role());
-
-        Point from = geometryFactory.createPoint(new Coordinate(request.fromLon(), request.fromLat()));
-        Point to = geometryFactory.createPoint(new Coordinate(request.toLon(), request.toLat()));
-        rideRequest.setFromLocation(from);
-        rideRequest.setToLocation(to);
-        rideRequest.setDepartureTime(request.departureTime());
-        rideRequest.setPassengerCount(request.passengerCount());
-        rideRequest.setAvailableSeats(request.availableSeats());
-        rideRequest.setNote(request.note());
-        rideRequest.setStatus(RideStatus.ACTIVE);
-        rideRequest.setReminderSent(false);
-        rideRequest.setTimeFlexibilityMinutes(
-                request.timeFlexibilityMinutes() != null ? request.timeFlexibilityMinutes() : 30
-        );
-
-        // Маршрут водителя: from → waypoints → to
-        if (request.role() == Role.DRIVER && request.waypoints() != null && !request.waypoints().isEmpty()) {
-            Coordinate[] coords = new Coordinate[request.waypoints().size() + 2];
-            coords[0] = new Coordinate(request.fromLon(), request.fromLat());
-            int i = 1;
-            for (RoutePointDTO wp : request.waypoints()) {
-                coords[i++] = new Coordinate(wp.lon(), wp.lat());
-            }
-            coords[i] = new Coordinate(request.toLon(), request.toLat());
-            LineString route = geometryFactory.createLineString(coords);
-            rideRequest.setRoute(route);
-        }
-
-
-        if (request.role() == Role.DRIVER && request.pricePerSeat() != null) {
-            if (request.pricePerSeat().compareTo(java.math.BigDecimal.ZERO) < 0) {
-                throw new RuntimeException("Цена не может быть отрицательной");
-            }
-            if (request.pricePerSeat().compareTo(new java.math.BigDecimal("500")) > 0) {
-                throw new RuntimeException("Цена выглядит некорректной (максимум 500 BYN)");
-            }
-            rideRequest.setPricePerSeat(request.pricePerSeat());
-        }
-
-
+        RideRequest rideRequest = buildFromRequest(new RideRequest(), request, user);
         RideRequest saved = rideRequestRepository.save(rideRequest);
 
         if (request.role() == Role.DRIVER) {
             notifySubscribers(saved, user);
         }
-
-
-
 
         // Поиск совместимых заявок противоположной роли для мгновенных уведомлений
         Role oppositeRole = (request.role() == Role.PASSENGER) ? Role.DRIVER : Role.PASSENGER;
@@ -129,8 +85,87 @@ public class RideRequestService {
         return toDTO(saved);
     }
 
+    /**
+     * Редактирование своей активной заявки.
+     * Меняются все основные поля; маршрут водителя пересобирается из новых точек.
+     */
+    @Transactional
+    public RideRequestResponseDTO editRequest(Long telegramId, Long requestId, RideRequestCreateRequest request) {
+        User user = userRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        RideRequest ride = rideRequestRepository.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
+        if (!ride.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("Можно редактировать только свою заявку");
+        }
+        if (ride.getStatus() != RideStatus.ACTIVE) {
+            throw new RuntimeException("Редактировать можно только активную заявку");
+        }
 
+        buildFromRequest(ride, request, user);
+        RideRequest saved = rideRequestRepository.save(ride);
+
+        if (request.role() == Role.DRIVER) {
+            notifySubscribers(saved, user);
+        }
+        return toDTO(saved);
+    }
+
+    /** Общая логика заполнения заявки для создания и редактирования. */
+    private RideRequest buildFromRequest(RideRequest rideRequest, RideRequestCreateRequest request, User user) {
+        rideRequest.setUser(user);
+        rideRequest.setRole(request.role());
+
+        Point from = geometryFactory.createPoint(new Coordinate(request.fromLon(), request.fromLat()));
+        Point to = geometryFactory.createPoint(new Coordinate(request.toLon(), request.toLat()));
+        rideRequest.setFromLocation(from);
+        rideRequest.setToLocation(to);
+        rideRequest.setDepartureTime(request.departureTime());
+        rideRequest.setPassengerCount(request.passengerCount());
+        rideRequest.setAvailableSeats(request.availableSeats());
+        rideRequest.setNote(request.note());
+        rideRequest.setReminderSent(false);
+        rideRequest.setTimeFlexibilityMinutes(
+                request.timeFlexibilityMinutes() != null ? request.timeFlexibilityMinutes() : 30
+        );
+
+        // Маршрут водителя: from → waypoints → to (без точек — маршрут очищается)
+        if (request.role() == Role.DRIVER && request.waypoints() != null && !request.waypoints().isEmpty()) {
+            Coordinate[] coords = new Coordinate[request.waypoints().size() + 2];
+            coords[0] = new Coordinate(request.fromLon(), request.fromLat());
+            int i = 1;
+            for (RoutePointDTO wp : request.waypoints()) {
+                coords[i++] = new Coordinate(wp.lon(), wp.lat());
+            }
+            coords[i] = new Coordinate(request.toLon(), request.toLat());
+            rideRequest.setRoute(geometryFactory.createLineString(coords));
+        } else {
+            rideRequest.setRoute(null);
+        }
+
+        if (request.role() == Role.DRIVER && request.pricePerSeat() != null) {
+            if (request.pricePerSeat().compareTo(java.math.BigDecimal.ZERO) < 0) {
+                throw new RuntimeException("Цена не может быть отрицательной");
+            }
+            if (request.pricePerSeat().compareTo(new java.math.BigDecimal("500")) > 0) {
+                throw new RuntimeException("Цена выглядит некорректной (максимум 500 BYN)");
+            }
+            rideRequest.setPricePerSeat(request.pricePerSeat());
+        } else if (request.role() == Role.PASSENGER) {
+            rideRequest.setPricePerSeat(null);
+        }
+
+        // Мест в заявке не больше, чем в машине водителя
+        if (request.role() == Role.DRIVER && request.availableSeats() != null) {
+            Vehicle vehicle = vehicleService.getVehicleForUser(user.getTelegramId());
+            if (vehicle != null && request.availableSeats() > vehicle.getSeats()) {
+                throw new RuntimeException("В вашей машине только " + vehicle.getSeats() + " мест");
+            }
+        }
+
+        return rideRequest;
+    }
 
     private void notifySubscribers(RideRequest ride, User driver) {
         List<RouteSubscription> subs = routeSubscriptionRepository.findMatchingSubscriptions(
@@ -167,11 +202,60 @@ public class RideRequestService {
                 .toList();
     }
 
+    /** Полные детали заявки — для модалки «Детали». */
+    @Transactional(readOnly = true)
+    public RideRequestDetailsDTO getDetails(Long requestId, Long viewerTelegramId) {
+        RideRequest r = rideRequestRepository.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        User owner = r.getUser();
+        Vehicle vehicle = null;
+        if (r.getRole() == Role.DRIVER) {
+            vehicle = vehicleService.getVehicleForUser(owner.getTelegramId());
+        }
+
+        String ownerName = owner.getFirstName() != null && !owner.getFirstName().isBlank()
+                ? owner.getFirstName() : "Пользователь";
+        if (owner.getLastName() != null && !owner.getLastName().isBlank()) {
+            ownerName += " " + owner.getLastName();
+        }
+
+        boolean isMine = viewerTelegramId != null && owner.getTelegramId().equals(viewerTelegramId);
+
+        return new RideRequestDetailsDTO(
+                r.getId(),
+                r.getRole().name(),
+                r.getFromLocation().getY(),
+                r.getFromLocation().getX(),
+                r.getToLocation().getY(),
+                r.getToLocation().getX(),
+                r.getDepartureTime(),
+                r.getPassengerCount(),
+                r.getAvailableSeats(),
+                r.getNote(),
+                r.getTimeFlexibilityMinutes(),
+                r.getStatus().name(),
+                r.getCreatedAt(),
+                r.getPricePerSeat(),
+                ownerName,
+                owner.getUsername(),
+                owner.getTelegramId(),
+                owner.getRating(),
+                owner.getTripCount(),
+                vehicle != null ? vehicle.getBrand() : null,
+                vehicle != null ? vehicle.getModel() : null,
+                vehicle != null ? vehicle.getColor() : null,
+                vehicle != null ? vehicle.getSeats() : null,
+                isMine
+        );
+    }
+
     /**
      * Поиск совместимых заявок.
      *
-     * @param role            роль ТЕХ, КОГО ищем (для пассажира — DRIVER, для водителя — PASSENGER)
-     * @param myRideRequestId id своей активной заявки (для водителя — чтобы взять его маршрут); может быть null
+     * @param role             роль ТЕХ, КОГО ищем (для пассажира — DRIVER, для водителя — PASSENGER)
+     * @param myRideRequestId  id своей активной заявки (для водителя — чтобы взять его маршрут); может быть null
+     * @param viewerTelegramId telegramId того, кто ищет — чтобы не предлагать ему его же заявки
      */
     public List<RideRequestMatchDTO> findCompatibleAsDTO(
             Role role,
@@ -181,7 +265,8 @@ public class RideRequestService {
             LocalDateTime departureTime,
             int limit,
             int flexibilityMinutes,
-            Long myRideRequestId
+            Long myRideRequestId,
+            Long viewerTelegramId
     ) {
         List<RideRequest> requests;
 
@@ -220,17 +305,19 @@ public class RideRequestService {
             }
         }
 
+        // Фильтр: не предлагаем пользователю его собственные заявки
+        requests = requests.stream()
+                .filter(r -> !r.getUser().getTelegramId().equals(viewerTelegramId))
+                .toList();
+
         List<RideRequest> filtered = requests.stream()
                 .filter(r -> r.getDepartureTime() == null || departureTime == null ||
                         Math.abs(Duration.between(r.getDepartureTime(), departureTime).toMinutes())
                                 <= Math.max(flexibilityMinutes,
                                 r.getTimeFlexibilityMinutes() != null ? r.getTimeFlexibilityMinutes() : 0))
-                .filter(r -> {
-                    if (role == Role.PASSENGER) {
-                        return r.getAvailableSeats() != null && r.getAvailableSeats() > 0;
-                    }
-                    return true;
-                })
+                // У пассажиров availableSeats не заполняется — считаем, что мест на всех хватает
+                .filter(r -> r.getRole() != Role.DRIVER ||
+                        (r.getAvailableSeats() != null && r.getAvailableSeats() > 0))
                 .toList();
 
         return filtered.stream()
@@ -307,7 +394,8 @@ public class RideRequestService {
 
         return new RideRequestMatchDTO(
                 r.getId(),
-                r.getUser().getFirstName() + " " + (r.getUser().getLastName() != null ? r.getUser().getLastName() : ""),
+                r.getUser().getFirstName() != null && !r.getUser().getFirstName().isBlank()
+                        ? r.getUser().getFirstName() : "Пользователь",
                 r.getRole().name(),
                 r.getFromLocation().getY(),
                 r.getFromLocation().getX(),

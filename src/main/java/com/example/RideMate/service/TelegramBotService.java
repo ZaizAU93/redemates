@@ -60,7 +60,7 @@ public class TelegramBotService {
                 .body(String.class);
 
         // ЛОГИРОВАНИЕ: выводим ответ в консоль (для отладки)
-        System.out.println("Telegram API response: " + response);
+   //     System.out.println("Telegram API response: " + response);
 
         JsonNode root = objectMapper.readTree(response);
         if (!root.path("ok").asBoolean()) {

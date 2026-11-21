@@ -1,8 +1,8 @@
 package com.example.RideMate.controller;
 
 import com.example.RideMate.entity.RouteSubscription;
-import com.example.RideMate.service.AuthService;
 import com.example.RideMate.service.RouteSubscriptionService;
+import com.example.RideMate.service.TelegramAuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,9 +14,9 @@ import java.util.Map;
 public class RouteSubscriptionController {
 
     private final RouteSubscriptionService subscriptionService;
-    private final AuthService authService;
+    private final TelegramAuthService authService;
 
-    public RouteSubscriptionController(RouteSubscriptionService subscriptionService, AuthService authService) {
+    public RouteSubscriptionController(RouteSubscriptionService subscriptionService, TelegramAuthService authService) {
         this.subscriptionService = subscriptionService;
         this.authService = authService;
     }

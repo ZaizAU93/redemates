@@ -2,6 +2,7 @@ package com.example.RideMate.controller;
 
 import com.example.RideMate.dto.RideRequestCreateRequest;
 import com.example.RideMate.dto.RideRequestDTO;
+import com.example.RideMate.dto.RideRequestDetailsDTO;
 import com.example.RideMate.dto.RideRequestMatchDTO;
 import com.example.RideMate.dto.RideRequestResponseDTO;
 import com.example.RideMate.entity.RideRequest;
@@ -32,12 +33,28 @@ public class RideRequestController {
 
     private final RideRequestRepository rideRequestRepository;
 
-
     @PostMapping
     public RideRequestResponseDTO create(@RequestBody RideRequestCreateRequest request,
                                          @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
         Long telegramId = authService.authenticate(initData);
         return rideRequestService.createRequest(request, telegramId);
+    }
+
+    /** Редактирование своей активной заявки. */
+    @PutMapping("/{id}")
+    public RideRequestResponseDTO edit(@PathVariable Long id,
+                                       @RequestBody RideRequestCreateRequest request,
+                                       @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+        Long telegramId = authService.authenticate(initData);
+        return rideRequestService.editRequest(telegramId, id, request);
+    }
+
+    /** Полные детали заявки (профиль владельца, автомобиль водителя и т.д.). */
+    @GetMapping("/{id}")
+    public RideRequestDetailsDTO details(@PathVariable Long id,
+                                         @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+        Long telegramId = authService.authenticate(initData);
+        return rideRequestService.getDetails(id, telegramId);
     }
 
     @GetMapping("/matches")
@@ -63,7 +80,7 @@ public class RideRequestController {
 
         // id активной заявки текущего пользователя — для поиска «по пути» от лица водителя
         Long myRideRequestId = null;
-        User user = userService.getUserByTelegramId(telegramId); // см. примечание ниже
+        User user = userService.getUserByTelegramId(telegramId);
         RideRequest myRide = rideRequestRepository.findFirstByUserIdAndStatus(user.getId(), RideStatus.ACTIVE)
                 .orElse(null);
         if (myRide != null) {
@@ -76,10 +93,10 @@ public class RideRequestController {
                 toLat, toLon,
                 fromRadiusMeters, toRadiusMeters,
                 time, limit, flexibilityMinutes,
-                myRideRequestId
+                myRideRequestId,
+                telegramId
         );
     }
-
 
     @GetMapping("/my")
     public List<RideRequestDTO> getUserRequests(
@@ -109,6 +126,4 @@ public class RideRequestController {
         rideRequestService.completeRide(id, telegramId);
         return ResponseEntity.ok().build();
     }
-
-
 }

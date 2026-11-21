@@ -8,6 +8,8 @@ public record MessageDTO(
         Long senderTelegramId,
         String senderName,
         String text,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        boolean fromMe,
+        boolean read
 ) {
 }

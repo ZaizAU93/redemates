@@ -80,6 +80,8 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
     /**
      * Поиск заявок водителей, чей маршрут проходит рядом с точками пассажира
      * и в правильном направлении (from раньше to вдоль линии).
+     * CAST вместо :: — иначе Hibernate путает двоеточие с именованным параметром
+     * (ошибка "No argument for named parameter ':route::geometry'").
      */
     @Query(value = """
         SELECT * FROM ride_requests
@@ -88,8 +90,8 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
           AND route IS NOT NULL
           AND ST_DWithin(route, ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326), :fromRadiusMeters)
           AND ST_DWithin(route, ST_SetSRID(ST_MakePoint(:toLon, :toLat), 4326), :toRadiusMeters)
-          AND ST_LineLocatePoint(route::geometry, ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326))
-              < ST_LineLocatePoint(route::geometry, ST_SetSRID(ST_MakePoint(:toLon, :toLat), 4326))
+          AND ST_LineLocatePoint(CAST(route AS geometry), ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326))
+              < ST_LineLocatePoint(CAST(route AS geometry), ST_SetSRID(ST_MakePoint(:toLon, :toLat), 4326))
           AND (available_seats IS NULL OR available_seats > 0)
         LIMIT :limit
         """, nativeQuery = true)
@@ -106,15 +108,16 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
     /**
      * Для водителя: заявки пассажиров, чьи точки лежат рядом с его маршрутом,
      * в правильном направлении.
+     * CAST вместо :: — иначе Hibernate путает двоеточие с именованным параметром.
      */
     @Query(value = """
         SELECT * FROM ride_requests
         WHERE role = 'PASSENGER'
           AND status = 'ACTIVE'
-          AND ST_DWithin(:route, from_location, :fromRadiusMeters)
-          AND ST_DWithin(:route, to_location, :toRadiusMeters)
-          AND ST_LineLocatePoint(:route::geometry, from_location::geometry)
-              < ST_LineLocatePoint(:route::geometry, to_location::geometry)
+          AND ST_DWithin(CAST(:route AS geometry), from_location, :fromRadiusMeters)
+          AND ST_DWithin(CAST(:route AS geometry), to_location, :toRadiusMeters)
+          AND ST_LineLocatePoint(CAST(:route AS geometry), from_location)
+              < ST_LineLocatePoint(CAST(:route AS geometry), to_location)
         LIMIT :limit
         """, nativeQuery = true)
     List<RideRequest> findPassengersAlongRoute(
@@ -123,7 +126,4 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
             @Param("toRadiusMeters") double toRadiusMeters,
             @Param("limit") int limit
     );
-
-
-
 }

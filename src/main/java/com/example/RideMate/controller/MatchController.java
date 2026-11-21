@@ -1,6 +1,5 @@
 package com.example.RideMate.controller;
 
-
 import com.example.RideMate.dto.MatchDTO;
 import com.example.RideMate.dto.MatchResponseDTO;
 import com.example.RideMate.service.MatchService;
@@ -8,7 +7,9 @@ import com.example.RideMate.service.TelegramAuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/matches")
@@ -40,7 +41,6 @@ public class MatchController {
         return ResponseEntity.ok().build();
     }
 
-
     @GetMapping("/my")
     public List<MatchDTO> getMyResponses(
             @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
@@ -55,6 +55,20 @@ public class MatchController {
         Long telegramId = authService.authenticate(initData);
         return matchService.getResponsesForRequest(rideRequestId, telegramId);
     }
+
+    /** Id заявок с живым откликом пользователя + счётчик новых откликов на его заявки. */
+    /** Данные для уведомлений: мои живые отклики, новые отклики на мои заявки, брони в подтверждении. */
+    @GetMapping("/notifications")
+    public Map<String, Object> getNotifications(
+            @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+        Long telegramId = authService.authenticate(initData);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("respondedRideIds", matchService.getMyRespondedRideRequestIds(telegramId));
+        result.put("pendingResponsesCount", matchService.getOwnerPendingResponseCount(telegramId));
+        result.put("confirmingCount", matchService.getConfirmingBookingCount(telegramId));
+        return result;
+    }
+
 
     @PutMapping("/{matchId}/accept")
     public ResponseEntity<Void> acceptMatch(

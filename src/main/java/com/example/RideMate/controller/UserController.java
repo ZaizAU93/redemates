@@ -1,7 +1,5 @@
 package com.example.RideMate.controller;
 
-
-
 import com.example.RideMate.dto.RoleUpdateRequest;
 import com.example.RideMate.dto.UserRegistrationRequest;
 import com.example.RideMate.dto.UserResponseDTO;
@@ -10,6 +8,7 @@ import com.example.RideMate.entity.Vehicle;
 import com.example.RideMate.service.TelegramAuthService;
 import com.example.RideMate.service.UserService;
 import com.example.RideMate.service.VehicleService;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,21 +22,22 @@ public class UserController {
     private final UserService userService;
     private final TelegramAuthService authService;
 
-
     @PostMapping("/register")
-    public UserResponseDTO register(@RequestBody UserRegistrationRequest request,
-                                    @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
-        System.out.println("Получен initData: " + initData);
+    public UserResponseDTO register(
+            @RequestBody(required = false) UserRegistrationRequest request,
+            @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+
         Long telegramId = authService.authenticate(initData);
-        // Игнорируем telegramId из тела, используем из initData
-        User user = userService.registerOrUpdate(
-                telegramId,
-                request.username(),
-                request.firstName(),
-                request.lastName(),
-                request.languageCode(),
-                request.isPremium()
-        );
+
+        // Данные профиля берём из InitData, а не из тела запроса
+        // (фронт присылает пустой JSON, имя есть только в initData)
+        JsonNode tgUser = authService.getTelegramUser(initData);
+        String firstName = tgUser.path("first_name").asText("");
+        String lastName  = tgUser.path("last_name").asText("");
+        String username  = tgUser.hasNonNull("username") ? tgUser.get("username").asText() : null;
+        String language  = tgUser.hasNonNull("language_code") ? tgUser.get("language_code").asText() : null;
+
+        User user = userService.registerOrUpdate(telegramId, username, firstName, lastName, language, null);
         return toDTO(user);
     }
 

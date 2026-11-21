@@ -92,7 +92,6 @@ public class MatchService {
 
     private int resolveSeats(RideRequest ride, Integer requested) {
         if (ride.getRole() == Role.PASSENGER) {
-            // Пассажирская заявка: водитель забирает весь экипаж пассажира
             return ride.getPassengerCount() != null ? ride.getPassengerCount() : 1;
         }
         return requested != null && requested >= 1 ? requested : 1;
@@ -112,7 +111,6 @@ public class MatchService {
             throw new RuntimeException("Бронь уже обработана");
         }
 
-        // Атомарное списание: SQL гарантирует, что мест хватает
         if (rideRequest.getRole() == Role.DRIVER) {
             int updated = rideRequestRepository.decrementSeats(rideRequest.getId(), match.getSeats());
             if (updated == 0) {
@@ -128,7 +126,6 @@ public class MatchService {
         rideRequest.setAcceptedMatchId(match.getId());
         rideRequestRepository.save(rideRequest);
 
-        // Если мест больше не осталось — отклоняем остальные запросы
         Integer available = rideRequest.getAvailableSeats();
         boolean noSeatsLeft = rideRequest.getRole() == Role.DRIVER && (available == null || available <= 0);
         if (noSeatsLeft) {
@@ -142,7 +139,6 @@ public class MatchService {
             }
         }
 
-        // Ждём подтверждения второй стороны
         notify(match.getResponder(),
                 "✅ Водитель принял ваш запрос! Подтвердите бронь в приложении в течение " +
                         CONFIRM_DEADLINE_HOURS + " часов, иначе место вернётся в пул.");
@@ -259,6 +255,38 @@ public class MatchService {
         }
     }
 
+    // ---------- Уведомления об откликах ----------
+
+    /**
+     * Id заявок, на которые пользователь уже откликнулся (и отклик ещё жив).
+     * Фронт по нему гасит кнопку «Откликнуться» на этих карточках.
+     */
+    @Transactional(readOnly = true)
+    public List<Long> getMyRespondedRideRequestIds(Long telegramId) {
+        User user = userRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        return matchRepository.findByResponderId(user.getId()).stream()
+                .filter(m -> m.getStatus() == MatchStatus.PENDING
+                        || m.getStatus() == MatchStatus.CONFIRMING
+                        || m.getStatus() == MatchStatus.CONFIRMED)
+                .map(m -> m.getRideRequest().getId())
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * Сколько живых откликов (PENDING) сейчас на заявки пользователя.
+     * Фронт по изменению этого числа показывает «🔔 Новый отклик».
+     */
+    @Transactional(readOnly = true)
+    public long getOwnerPendingResponseCount(Long telegramId) {
+        User user = userRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        return matchRepository.findByRideRequestUserId(user.getId()).stream()
+                .filter(m -> m.getStatus() == MatchStatus.PENDING)
+                .count();
+    }
+
     // ---------- Вспомогательное ----------
 
     private void notify(User user, String text) {
@@ -313,4 +341,23 @@ public class MatchService {
                 responderTelegramId
         );
     }
+
+    /**
+     * Сколько броней сейчас в статусе CONFIRMING, где пользователь — участник
+     * (откликнулся или владелец заявки). Фронт по увеличению показывает
+     * «Вашу бронь приняли — подтвердите».
+     */
+    @Transactional(readOnly = true)
+    public long getConfirmingBookingCount(Long telegramId) {
+        User user = userRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        long asResponder = matchRepository.findByResponderId(user.getId()).stream()
+                .filter(m -> m.getStatus() == MatchStatus.CONFIRMING)
+                .count();
+        long asOwner = matchRepository.findByRideRequestUserId(user.getId()).stream()
+                .filter(m -> m.getStatus() == MatchStatus.CONFIRMING)
+                .count();
+        return asResponder + asOwner;
+    }
+
 }
