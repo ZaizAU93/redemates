@@ -41,6 +41,12 @@ public class RideRequestService {
 
     private final RouteSubscriptionRepository routeSubscriptionRepository;
 
+    /** Доступ к RouteService для эндпоинта предпросмотра альтернатив. */
+    /** Доступ к RouteService для эндпоинта предпросмотра альтернатив. */
+    public RouteService getRouteService() {
+        return routeService;
+    }
+
     @Transactional
     public RideRequestResponseDTO createRequest(RideRequestCreateRequest request, Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
@@ -135,6 +141,8 @@ public class RideRequestService {
         // Маршрут по дорогам через OSRM: from → промежуточные точки → to.
         // Если OSRM недоступен — RouteService сам откатится на прямую линию через те же точки.
         // Маршрут строится у водителя всегда, даже без промежуточных точек.
+        // Маршрут: если водитель выбрал вариант из предложенных — берём его,
+        // иначе первый (основной) вариант из OSRM.
         if (request.role() == Role.DRIVER) {
             List<double[]> wp = new ArrayList<>();
             if (request.waypoints() != null) {
@@ -142,10 +150,18 @@ public class RideRequestService {
                     wp.add(new double[]{w.lat(), w.lon()});
                 }
             }
-            rideRequest.setRoute(routeService.buildRoute(from, wp, to));
+            List<LineString> alternatives = routeService.buildRouteAlternatives(from, wp, to);
+            LineString chosen = alternatives.get(0);
+            if (request.routeIndex() != null
+                    && request.routeIndex() >= 0
+                    && request.routeIndex() < alternatives.size()) {
+                chosen = alternatives.get(request.routeIndex());
+            }
+            rideRequest.setRoute(chosen);
         } else {
             rideRequest.setRoute(null);
         }
+
 
         if (request.role() == Role.DRIVER && request.pricePerSeat() != null) {
             if (request.pricePerSeat().compareTo(java.math.BigDecimal.ZERO) < 0) {
@@ -526,4 +542,33 @@ public class RideRequestService {
             rideRequestRepository.save(r);
         }
     }
+
+    /** Координаты сохранённого маршрута для отрисовки на карте: [[lat, lon], ...]. */
+    @Transactional(readOnly = true)
+    public List<double[]> getRouteCoords(Long requestId) {
+        RideRequest r = rideRequestRepository.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+        if (r.getRoute() == null) return List.of();
+        List<double[]> result = new ArrayList<>();
+        for (Coordinate c : r.getRoute().getCoordinates()) {
+            result.add(new double[]{c.y, c.x}); // JTS хранит (x=lon, y=lat) — отдаём lat, lon
+        }
+        return result;
+    }
+
+    /** Предпросмотр альтернативных дорог: список вариантов, каждый — [[lat, lon], ...]. */
+    public List<List<double[]>> getRouteAlternativesCoords(Point from, List<double[]> waypoints, Point to) {
+        List<LineString> alternatives = routeService.buildRouteAlternatives(from, waypoints, to);
+        List<List<double[]>> result = new ArrayList<>();
+        for (LineString line : alternatives) {
+            List<double[]> coords = new ArrayList<>();
+            for (Coordinate c : line.getCoordinates()) {
+                coords.add(new double[]{c.y, c.x}); // JTS хранит (x=lon, y=lat) — отдаём lat, lon
+            }
+            result.add(coords);
+        }
+        return result;
+    }
+
+
 }

@@ -14,6 +14,10 @@ import com.example.RideMate.service.RideRequestService;
 import com.example.RideMate.service.TelegramAuthService;
 import com.example.RideMate.service.UserService;
 import lombok.Data;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +36,7 @@ public class RideRequestController {
     private final UserService userService;
 
     private final RideRequestRepository rideRequestRepository;
+
 
     @PostMapping
     public RideRequestResponseDTO create(@RequestBody RideRequestCreateRequest request,
@@ -126,4 +131,26 @@ public class RideRequestController {
         rideRequestService.completeRide(id, telegramId);
         return ResponseEntity.ok().build();
     }
+
+
+    @GetMapping("/{id}/route")
+    public List<double[]> getRoute(@PathVariable Long id) {
+        return rideRequestService.getRouteCoords(id);
+    }
+
+
+    /** Предпросмотр альтернативных дорог: [[lat, lon], ...] для каждого варианта. */
+    @GetMapping("/alternatives")
+    public List<List<double[]>> routeAlternatives(
+            @RequestParam double fromLat, @RequestParam double fromLon,
+            @RequestParam double toLat, @RequestParam double toLon,
+            @RequestHeader(value = "X-Telegram-Init-Data", required = false) String tgInitData) {
+        Point from = new GeometryFactory(new PrecisionModel(), 4326)
+                .createPoint(new Coordinate(fromLon, fromLat));
+        Point to = new GeometryFactory(new PrecisionModel(), 4326)
+                .createPoint(new Coordinate(toLon, toLat));
+        return rideRequestService.getRouteAlternativesCoords(from, List.of(), to);
+
+    }
+
 }

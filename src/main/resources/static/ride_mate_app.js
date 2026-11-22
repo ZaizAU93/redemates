@@ -296,6 +296,7 @@ async function loadNearbyRides() {
 
 
 
+
 function renderMapRides(rides) {
     const list = document.getElementById('mapRideList');
     // Сначала чистим список и служебные надписи — иначе карточки накапливаются при каждом обновлении
@@ -525,7 +526,8 @@ async function createRideRequest() {
             toLat: selectedTo.latitude, toLon: selectedTo.longitude,
             departureTime, passengerCount, availableSeats, note,
             timeFlexibilityMinutes: timeFlexibility, pricePerSeat,
-            waypoints: waypoints.map(wp => ({ lat: wp.latitude, lon: wp.longitude }))
+            waypoints: waypoints.map(wp => ({ lat: wp.latitude, lon: wp.longitude })),
+            routeIndex: chosenRouteIndex ?? null
         })
     });
     if (resp.ok) {
@@ -542,12 +544,15 @@ async function createRideRequest() {
             selectedTo.latitude, selectedTo.longitude,
             departureTime, timeFlexibility, searchRadiusKm * 1000
         );
+        // Убираем линии вариантов дороги — выбор сделан и сохранён
+        clearAltRoutes();
         loadNearbyRides();
         loadActiveRide();
     } else {
         showMessage(await resp.text(), 'Ошибка');
     }
 }
+
 
 function renderMyRideInfo(fromName, toName, departureTime, role, availableSeats, pricePerSeat, timeFlexibility, passengerCount, note) {
     document.getElementById('myRideInfo').innerHTML = `
@@ -702,6 +707,8 @@ async function loadActiveRide() {
     cancelBtn.onclick = cancelMyRide;
     actions.appendChild(cancelBtn);
     document.getElementById('myRideInfo').appendChild(actions);
+
+    drawMyRoute();
 }
 
 
@@ -1204,8 +1211,12 @@ function closeMapModal() {
             if (layer instanceof L.Marker) map.removeLayer(layer);
         });
         tempMarker = null;
+        if (altRouteLayers.length > 0) altRouteLayers.forEach(p => map.removeLayer(p));
+        altRouteLayers = [];
+        chosenRouteIndex = null;
     }
 }
+
 
 function confirmMapPoint() {
     if (!selectedMapPoint) { showMessage('Выберите точку на карте'); return; }
@@ -1544,3 +1555,72 @@ function wrapAfterRender(name) {
 // Страховка: карточки, отрисованные другими функциями, подхватятся раз в 3 секунды.
 // Кэш адресов делает это почти бесплатным.
 setInterval(() => beautifyCoordinates(), 3000);
+
+let ownRouteLayer = null;
+
+async function drawMyRoute() {
+    if (!currentRideId) return;
+    try {
+        const resp = await fetch(`/api/rides/${currentRideId}/route`,
+            { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!resp.ok) return;
+        const coords = await resp.json();
+        if (ownRouteLayer) { mainMap.removeLayer(ownRouteLayer); ownRouteLayer = null; }
+        if (!coords || coords.length < 2) return;
+        ownRouteLayer = L.polyline(coords, { color: '#1a73e8', weight: 4, opacity: 0.7 })
+            .addTo(mainMap);
+    } catch (e) { /* маршрут — украшение, не критично */ }
+}
+
+let altRouteLayers = [];
+let chosenRouteIndex = null;
+const ALT_COLORS = ['#1a73e8', '#f4511e', '#2e7d32'];
+
+async function showRouteAlternatives() {
+    if (!selectedFrom || !selectedTo) { showMessage('Сначала выберите обе точки'); return; }
+    // Варианты дороги показываем в карте-модалке — на вкладке «Создать» карты нет
+    openMapModal('alternatives');
+    document.getElementById('mapModalTitle').textContent = 'Коснитесь линии, чтобы выбрать дорогу';
+    // даём модалке время инициализировать карту
+    setTimeout(async () => {
+        try {
+            const url = `/api/rides/alternatives?fromLat=${selectedFrom.latitude}&fromLon=${selectedFrom.longitude}`
+                + `&toLat=${selectedTo.latitude}&toLon=${selectedTo.longitude}`;
+            const resp = await fetch(url, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+            if (!resp.ok) throw new Error(await resp.text());
+            const routes = await resp.json();
+            clearAltRoutes();
+            routes.forEach((coords, i) => {
+                const poly = L.polyline(coords, {
+                    color: ALT_COLORS[i] || '#757575', weight: 5, opacity: 0.8
+                }).addTo(map);
+                poly.bindTooltip(`Вариант ${i + 1}`, { sticky: true });
+                poly.on('click', () => selectRouteAlternative(i));
+                altRouteLayers.push(poly);
+            });
+            if (altRouteLayers.length > 0) {
+                map.fitBounds(L.featureGroup(altRouteLayers).getBounds().pad(0.15));
+            }
+            chosenRouteIndex = null;
+        } catch (e) {
+            closeMapModal();
+            showMessage('Не удалось получить варианты дороги: ' + e.message, 'Ошибка');
+        }
+    }, 400);
+}
+
+function selectRouteAlternative(i) {
+    chosenRouteIndex = i;
+    const hint = document.getElementById('routeChoiceHint');
+    if (hint) hint.textContent = `Выбран вариант ${i + 1}`;
+    closeMapModal();
+    showMessage(`Выбран вариант дороги ${i + 1}. Сохраните заявку, чтобы маршрут закрепился.`, 'Дорога выбрана');
+}
+
+function clearAltRoutes() {
+    if (map) altRouteLayers.forEach(p => map.removeLayer(p));
+    altRouteLayers = [];
+    chosenRouteIndex = null;
+}
+
+

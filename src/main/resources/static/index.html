@@ -298,6 +298,9 @@
                 <input type="text" id="noteInput" placeholder="Например: могу взять с собой багаж">
             </div>
             <button class="btn" id="createSubmitBtn" onclick="createRideRequest()">Создать и найти попутчиков</button>
+            <button class="btn btn-secondary btn-sm" onclick="showRouteAlternatives()">🛣️ Показать варианты дороги</button>
+            <div id="routeChoiceHint" class="hint hidden"></div>
+
             <button class="btn btn-secondary hidden" id="cancelEditBtn" onclick="resetCreateForm()" style="margin-top:8px;">Отменить редактирование</button>
         </div>
         <div id="myRide" class="card hidden">

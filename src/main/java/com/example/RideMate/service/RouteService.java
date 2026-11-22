@@ -70,4 +70,47 @@ public class RouteService {
         line.setSRID(4326);
         return line;
     }
+
+    /**
+     * Строит до трёх дорожных маршрутов (OSRM alternatives=true).
+     * Если OSRM недоступен или вариантов нет — один прямой маршрут через заданные точки.
+     */
+    public List<LineString> buildRouteAlternatives(Point from, List<double[]> waypoints, Point to) {
+        List<double[]> points = new ArrayList<>();
+        points.add(new double[]{from.getY(), from.getX()}); // [lat, lon]
+        if (waypoints != null) points.addAll(waypoints);
+        points.add(new double[]{to.getY(), to.getX()});
+
+        StringBuilder coords = new StringBuilder();
+        for (double[] p : points) {
+            if (coords.length() > 0) coords.append(';');
+            coords.append(p[1]).append(',').append(p[0]); // OSRM ждёт lon,lat
+        }
+
+        try {
+            String url = OSRM_BASE + coords + "?overview=full&geometries=geojson&alternatives=true";
+            String body = rest.getForObject(url, String.class);
+            JsonNode root = mapper.readTree(body);
+            JsonNode routes = root.path("routes");
+            if (!"Ok".equals(root.path("code").asText()) || !routes.isArray() || routes.size() < 1) {
+                return List.of(fallbackLine(points));
+            }
+            List<LineString> result = new ArrayList<>();
+            for (JsonNode r : routes) {
+                JsonNode coordsNode = r.path("geometry").path("coordinates");
+                if (!coordsNode.isArray() || coordsNode.size() < 2) continue;
+                List<Coordinate> list = new ArrayList<>();
+                for (JsonNode c : coordsNode) {
+                    list.add(new Coordinate(c.get(0).asDouble(), c.get(1).asDouble()));
+                }
+                LineString line = geometryFactory.createLineString(list.toArray(new Coordinate[0]));
+                line.setSRID(4326);
+                result.add(line);
+            }
+            return result.isEmpty() ? List.of(fallbackLine(points)) : result;
+        } catch (Exception e) {
+            return List.of(fallbackLine(points));
+        }
+    }
+
 }
