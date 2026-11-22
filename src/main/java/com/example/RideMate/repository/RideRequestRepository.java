@@ -126,4 +126,49 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
             @Param("toRadiusMeters") double toRadiusMeters,
             @Param("limit") int limit
     );
+
+
+
+    /**
+     * Поиск «по пути»: маршрут кандидата — сохранённая линия route,
+     * а если её нет — прямая от «Откуда» до «Куда».
+     * Обе точки ищущего должны лежать в радиусе от маршрута
+     * и в правильном направлении (from раньше to вдоль линии).
+     * CAST вместо :: — Hibernate путает двоеточие с именованным параметром.
+     */
+    @Query(value = """
+        SELECT * FROM ride_requests
+        WHERE role = :role
+          AND status = 'ACTIVE'
+          AND (available_seats IS NULL OR available_seats > 0)
+          AND ST_DWithin(
+                COALESCE(route, CAST(ST_MakeLine(CAST(from_location AS geometry), CAST(to_location AS geometry)) AS geography)),
+                CAST(ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326) AS geography),
+                :fromRadiusMeters)
+          AND ST_DWithin(
+                COALESCE(route, CAST(ST_MakeLine(CAST(from_location AS geometry), CAST(to_location AS geometry)) AS geography)),
+                CAST(ST_SetSRID(ST_MakePoint(:toLon, :toLat), 4326) AS geography),
+                :toRadiusMeters)
+          AND ST_LineLocatePoint(
+                CAST(COALESCE(route, CAST(ST_MakeLine(CAST(from_location AS geometry), CAST(to_location AS geometry)) AS geography)) AS geometry),
+                ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326))
+              < ST_LineLocatePoint(
+                CAST(COALESCE(route, CAST(ST_MakeLine(CAST(from_location AS geometry), CAST(to_location AS geometry)) AS geography)) AS geometry),
+                ST_SetSRID(ST_MakePoint(:toLon, :toLat), 4326))
+        ORDER BY ST_Distance(
+                COALESCE(route, CAST(ST_MakeLine(CAST(from_location AS geometry), CAST(to_location AS geometry)) AS geography)),
+                CAST(ST_SetSRID(ST_MakePoint(:fromLon, :fromLat), 4326) AS geography))
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<RideRequest> findRidesAlongPath(
+            @Param("role") String role,
+            @Param("fromLat") double fromLat,
+            @Param("fromLon") double fromLon,
+            @Param("toLat") double toLat,
+            @Param("toLon") double toLon,
+            @Param("fromRadiusMeters") double fromRadiusMeters,
+            @Param("toRadiusMeters") double toRadiusMeters,
+            @Param("limit") int limit
+    );
+
 }

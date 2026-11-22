@@ -265,10 +265,27 @@ async function loadNearbyRides() {
         return;
     }
     const loc = userLocation || { lat: 53.9, lon: 27.56 };
+
+    // Рекомендации считаем от активной заявки, а не от текущего положения:
+    // «Куда» ищущего — его реальный пункт назначения, иначе скоринг топит всех,
+    // кто едет дальше точки, где пользователь стоит на карте.
+    const from = window.activeRideFrom
+        || (typeof selectedFrom !== 'undefined' && selectedFrom)
+        || { latitude: loc.lat, longitude: loc.lon };
+    const knownTo = window.activeRideTo
+        || (typeof selectedTo !== 'undefined' && selectedTo)
+        || null;
+    const toLat = knownTo ? knownTo.latitude : from.latitude;
+    const toLon = knownTo ? knownTo.longitude : from.longitude;
+    // Если назначение известно — коридор по «Куда» 30 км; если нет — не отсекаем, как раньше
+    const toRadius = knownTo ? 30000 : 30000000;
+
+    const url = `/api/rides/matches?role=${oppositeRole(currentUser.role)}`
+        + `&fromLat=${from.latitude}&fromLon=${from.longitude}`
+        + `&toLat=${toLat}&toLon=${toLon}`
+        + `&fromRadiusMeters=30000&toRadiusMeters=${toRadius}&limit=10`;
+
     try {
-        // Карта: важна только точка отправления рядом со мной.
-        // Радиус по «куда» ставим огромный, чтобы конечная точка поездки не отсекала попутчиков.
-        const url = `/api/rides/matches?role=${oppositeRole(currentUser.role)}&fromLat=${loc.lat}&fromLon=${loc.lon}&toLat=${loc.lat}&toLon=${loc.lon}&fromRadiusMeters=30000&toRadiusMeters=30000000&limit=10`;
         const resp = await fetch(url, { headers: { 'X-Telegram-Init-Data': tgInitData } });
         if (!resp.ok) throw new Error(await resp.text());
         renderMapRides(await resp.json());
@@ -278,15 +295,17 @@ async function loadNearbyRides() {
 }
 
 
+
 function renderMapRides(rides) {
     const list = document.getElementById('mapRideList');
+    // Сначала чистим список и служебные надписи — иначе карточки накапливаются при каждом обновлении
+    list.innerHTML = '';
     mainMapLayers.forEach(l => mainMap.removeLayer(l));
     mainMapLayers = [];
 
-    // Один пользователь — одна активная заявка, поэтому дедуп по человеку.
-    // Это убирает дубли, размноженные JOIN-ом на бэкенде (у них разные id, но один человек).
+    // Один пользователь — одна активная заявка: дедуп по человеку на случай дублей с бэкенда
     const seen = new Set();
-    const unique = rides.filter(r => {
+    const unique = (rides || []).filter(r => {
         const key = r.userTelegramId ?? r.id;
         if (seen.has(key)) return false;
         seen.add(key);
@@ -343,6 +362,7 @@ function renderMapRides(rides) {
         mainMap.fitBounds(L.featureGroup(mainMapLayers).getBounds().pad(0.2), { maxZoom: 13 });
     }
 }
+
 
 
 
@@ -1361,3 +1381,166 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+
+// ===== Адреса и отзывы в «Деталях заявки» =====
+
+const addressCache = new Map();
+
+async function reverseGeocodeShort(lat, lon) {
+    const key = lat.toFixed(4) + ',' + lon.toFixed(4);
+    if (addressCache.has(key)) return addressCache.get(key);
+    try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ru`);
+        const data = await r.json();
+        let addr = data?.display_name || null;
+        if (addr) {
+            const parts = addr.split(',');
+            addr = parts.slice(0, 3).join(',').trim();
+        }
+        const result = addr || `Точка (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+        addressCache.set(key, result);
+        return result;
+    } catch (e) {
+        return `Точка (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+    }
+}
+
+async function loadUserReviews(telegramId, container) {
+    try {
+        const resp = await fetch(`/api/reviews/about?telegramId=${telegramId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!resp.ok) { container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);">Пока нет отзывов</p>'; return; }
+        const reviews = await resp.json();
+        if (!reviews.length) {
+            container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);">Пока нет отзывов</p>';
+            return;
+        }
+        const avg = reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length;
+        const stars = '⭐'.repeat(Math.round(avg));
+        let html = `<div style="font-weight:600;margin-bottom:6px;">${stars} ${avg.toFixed(1)} · отзывов: ${reviews.length}</div>`;
+        reviews.slice(0, 5).forEach(r => {
+            const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
+            html += `<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border,#eee);">
+                <strong>${escapeHtml(r.authorName || 'Пользователь')}</strong>
+                <span style="color:#ff9800;">${'⭐'.repeat(r.rating || 0)}</span>
+                <span style="color:var(--text-secondary);"> · ${escapeHtml(date)}</span>
+                ${r.comment ? `<div style="margin-top:2px;">${escapeHtml(r.comment)}</div>` : ''}
+            </div>`;
+        });
+        if (reviews.length > 5) html += '<p style="font-size:12px;color:var(--text-secondary);">…и ещё ' + (reviews.length - 5) + '</p>';
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);">Пока нет отзывов</p>';
+    }
+}
+
+async function openRideDetails(rideId) {
+    const resp = await fetch(`/api/rides/${rideId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+    if (!resp.ok) { showMessage('Не удалось загрузить детали', 'Ошибка'); return; }
+    const d = await resp.json();
+    const body = document.getElementById('detailsBody');
+
+    body.innerHTML = `
+        <div class="details-row"><span class="k">Кто</span><span class="v">${roleEmoji(d.role)} ${escapeHtml(d.ownerName)}</span></div>
+        <div class="details-row"><span class="k">Username</span><span class="v">${d.ownerUsername ? '@' + escapeHtml(d.ownerUsername) : 'не указан'}</span></div>
+        <div class="details-row"><span class="k">Рейтинг</span><span class="v">${d.ownerRating ? `⭐ ${d.ownerRating.toFixed(1)}` : 'нет оценок'}</span></div>
+        <div class="details-row"><span class="k">Поездок</span><span class="v">${d.ownerTripCount ?? 0}</span></div>
+        <div class="details-row"><span class="k">Откуда</span><span class="v" id="detailsFromAddr">загрузка…</span></div>
+        <div class="details-row"><span class="k">Куда</span><span class="v" id="detailsToAddr">загрузка…</span></div>
+        <div class="details-row"><span class="k">Время</span><span class="v">${d.departureTime ? new Date(d.departureTime).toLocaleString() + ` · ±${d.timeFlexibilityMinutes} мин` : 'не указано'}</span></div>
+        ${d.role === 'DRIVER' ? `
+        <div class="details-row"><span class="k">Места</span><span class="v">свободно: ${d.availableSeats ?? '—'}${d.vehicleSeats ? ` (в машине: ${d.vehicleSeats})` : ''}</span></div>
+        <div class="details-row"><span class="k">Цена</span><span class="v">${d.pricePerSeat ? d.pricePerSeat + ' BYN/место' : 'не указана'}</span></div>
+        <div class="details-row"><span class="k">Авто</span><span class="v">${d.vehicleBrand ? escapeHtml(d.vehicleBrand) + ' ' + escapeHtml(d.vehicleModel || '') + (d.vehicleColor ? ', ' + escapeHtml(d.vehicleColor) : '') : 'не указано'}</span></div>
+        ` : ''}
+        <div class="details-row"><span class="k">Комментарий</span><span class="v">${d.note ? escapeHtml(d.note) : '—'}</span></div>
+        <div style="margin-top:12px;">
+            <div style="font-weight:600;margin-bottom:6px;">Отзывы о ${escapeHtml(d.ownerName)}:</div>
+            <div id="detailsReviews">загрузка…</div>
+        </div>
+    `;
+
+    reverseGeocodeShort(d.fromLat, d.fromLon).then(addr => {
+        const el = document.getElementById('detailsFromAddr');
+        if (el) el.textContent = addr;
+    });
+    reverseGeocodeShort(d.toLat, d.toLon).then(addr => {
+        const el = document.getElementById('detailsToAddr');
+        if (el) el.textContent = addr;
+    });
+
+    const reviewsEl = document.getElementById('detailsReviews');
+    if (reviewsEl) {
+        if (d.ownerTelegramId) loadUserReviews(d.ownerTelegramId, reviewsEl);
+        else reviewsEl.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);">Пока нет отзывов</p>';
+    }
+
+    const actions = document.getElementById('detailsActions');
+    actions.innerHTML = '';
+    if (d.isMine) {
+        actions.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">Это ваша заявка — отредактировать её можно на вкладке «Создать».</p>';
+    } else if (respondedRideIds.has(d.id)) {
+        const sent = document.createElement('button');
+        sent.className = 'btn btn-secondary';
+        sent.textContent = 'Отправлено ✓';
+        sent.disabled = true;
+        actions.appendChild(sent);
+    } else {
+        const respondBtn = document.createElement('button');
+        respondBtn.className = 'btn';
+        respondBtn.textContent = 'Откликнуться';
+        respondBtn.onclick = () => respondToRide(d.id, respondBtn, { role: d.role, availableSeats: d.availableSeats });
+        actions.appendChild(respondBtn);
+    }
+    document.getElementById('detailsModal').classList.add('active');
+}
+
+
+// ===== Адреса вместо координат во всех карточках =====
+
+// Ловим пару «широта, долгота» с 3-6 знаками после точки, в скобках или без.
+// Даты («22.11.2026») и цены не совпадают: у них мало знаков после точки или нет второй группы.
+const COORD_PATTERN = /[(]?\s*(\d{1,2}\.\d{3,6}),\s*(\d{1,3}\.\d{3,6})\s*[)]?/g;
+
+
+async function beautifyCoordinates(root = document.body) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const targets = [];
+    while (walker.nextNode()) {
+        COORD_PATTERN.lastIndex = 0;
+        if (COORD_PATTERN.test(walker.currentNode.nodeValue)) targets.push(walker.currentNode);
+    }
+    for (const node of targets) {
+        const original = node.nodeValue;
+        COORD_PATTERN.lastIndex = 0;
+        const pairs = [];
+        let m;
+        while ((m = COORD_PATTERN.exec(original)) !== null) {
+            pairs.push({ full: m[0], lat: parseFloat(m[1]), lon: parseFloat(m[2]) });
+        }
+        let updated = original;
+        for (const p of pairs) {
+            updated = updated.replace(p.full, await reverseGeocodeShort(p.lat, p.lon));
+        }
+        node.nodeValue = updated;
+    }
+}
+
+// После отрисовки карточек функциями приложения — прогоняем замену по экрану
+function wrapAfterRender(name) {
+    try {
+        const orig = window[name];
+        if (typeof orig !== 'function') return;
+        window[name] = async function (...args) {
+            const result = await orig.apply(this, args);
+            await beautifyCoordinates();
+            return result;
+        };
+    } catch (e) { /* функции с таким именем нет — пропускаем */ }
+}
+
+['loadActiveRide', 'loadSubscriptions', 'loadMyRides'].forEach(wrapAfterRender);
+
+// Страховка: карточки, отрисованные другими функциями, подхватятся раз в 3 секунды.
+// Кэш адресов делает это почти бесплатным.
+setInterval(() => beautifyCoordinates(), 3000);

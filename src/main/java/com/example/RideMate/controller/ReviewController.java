@@ -8,6 +8,7 @@ import com.example.RideMate.service.TelegramAuthService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/reviews")
@@ -48,6 +49,16 @@ public class ReviewController {
                                 @RequestHeader("X-Telegram-Init-Data") String initData) {
         Long telegramId = authService.authenticate(initData);
         return reviewService.getCounterparty(rideRequestId, telegramId);
+    }
+
+
+    /** Отзывы о конкретном человеке — для показа в «Деталях заявки». */
+    @GetMapping("/about")
+    public List<Map<String, Object>> getReviewsAbout(
+            @RequestParam Long telegramId,
+            @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+        authService.authenticate(initData);
+        return reviewService.getReviewsAbout(telegramId);
     }
 
 }

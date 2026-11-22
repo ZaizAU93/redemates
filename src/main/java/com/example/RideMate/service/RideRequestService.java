@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +37,7 @@ public class RideRequestService {
     private final VehicleService vehicleService;
     private final MatchRepository matchRepository;
     private final GeometryFactory geometryFactory; // бин с SRID 4326 из GeoConfig
+    private final RouteService routeService;
 
     private final RouteSubscriptionRepository routeSubscriptionRepository;
 
@@ -130,16 +132,17 @@ public class RideRequestService {
                 request.timeFlexibilityMinutes() != null ? request.timeFlexibilityMinutes() : 30
         );
 
-        // Маршрут водителя: from → waypoints → to (без точек — маршрут очищается)
-        if (request.role() == Role.DRIVER && request.waypoints() != null && !request.waypoints().isEmpty()) {
-            Coordinate[] coords = new Coordinate[request.waypoints().size() + 2];
-            coords[0] = new Coordinate(request.fromLon(), request.fromLat());
-            int i = 1;
-            for (RoutePointDTO wp : request.waypoints()) {
-                coords[i++] = new Coordinate(wp.lon(), wp.lat());
+        // Маршрут по дорогам через OSRM: from → промежуточные точки → to.
+        // Если OSRM недоступен — RouteService сам откатится на прямую линию через те же точки.
+        // Маршрут строится у водителя всегда, даже без промежуточных точек.
+        if (request.role() == Role.DRIVER) {
+            List<double[]> wp = new ArrayList<>();
+            if (request.waypoints() != null) {
+                for (RoutePointDTO w : request.waypoints()) {
+                    wp.add(new double[]{w.lat(), w.lon()});
+                }
             }
-            coords[i] = new Coordinate(request.toLon(), request.toLat());
-            rideRequest.setRoute(geometryFactory.createLineString(coords));
+            rideRequest.setRoute(routeService.buildRoute(from, wp, to));
         } else {
             rideRequest.setRoute(null);
         }
@@ -321,7 +324,8 @@ public class RideRequestService {
                 .toList();
 
         return filtered.stream()
-                .map(r -> toMatchDTO(r, fromLat, fromLon, departureTime))
+                .map(r -> toMatchDTO(r, fromLat, fromLon, toLat, toLon, departureTime))
+                .filter(dto -> dto.score() >= 40) // порог осмысленности: отсекаем «едет совсем не туда»
                 .sorted(Comparator.comparingDouble(RideRequestMatchDTO::score).reversed())
                 .toList();
     }
@@ -351,7 +355,8 @@ public class RideRequestService {
         );
     }
 
-    private RideRequestMatchDTO toMatchDTO(RideRequest r, double requestFromLat, double requestFromLon, LocalDateTime requestTime) {
+    private RideRequestMatchDTO toMatchDTO(RideRequest r, double requestFromLat, double requestFromLon,
+                                           double requestToLat, double requestToLon, LocalDateTime requestTime) {
         String vehicleBrand = null;
         String vehicleModel = null;
         String vehicleColor = null;
@@ -368,15 +373,24 @@ public class RideRequestService {
 
         double score = 100.0;
 
+        // Расхождение «Откуда»
         double dist = calculateDistance(requestFromLat, requestFromLon,
                 r.getFromLocation().getY(), r.getFromLocation().getX());
         score -= Math.min(dist / 1000.0 * 0.4, 20);
 
-        // Штраф за отклонение точек заявки от маршрута водителя
+        // Расхождение «Куда»: едешь в другую сторону — сильно минусуем
+        double toDist = calculateDistance(requestToLat, requestToLon,
+                r.getToLocation().getY(), r.getToLocation().getX());
+        score -= Math.min(toDist / 1000.0 * 0.5, 45);
+
+        // Отклонение ТОЧЕК ИЩУЩЕГО от маршрута кандидата.
+        // Раньше сравнивались точки кандидата с его же маршрутом — штраф всегда был около нуля.
         if (r.getRoute() != null) {
+            Point myFrom = geometryFactory.createPoint(new Coordinate(requestFromLon, requestFromLat));
+            Point myTo = geometryFactory.createPoint(new Coordinate(requestToLon, requestToLat));
             double dev = Math.min(
-                    deviationMeters(r.getFromLocation(), r.getRoute()),
-                    deviationMeters(r.getToLocation(), r.getRoute()));
+                    deviationMeters(myFrom, r.getRoute()),
+                    deviationMeters(myTo, r.getRoute()));
             score -= Math.min(dev / 1000.0 * 0.5, 25);
         }
 

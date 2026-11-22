@@ -66,5 +66,10 @@ public class RideRequest {
     @Column(name = "price_per_seat", precision = 10, scale = 2)
     private BigDecimal pricePerSeat;
 
+    // Промежуточные точки маршрута: JSON вида [{"lat":54.42,"lon":26.89,"name":"Мядель"}]
+    @Column(name = "waypoints", columnDefinition = "text")
+    private String waypointsJson;
+
+
 
 }

@@ -13,6 +13,9 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     List<Review> findByReviewed(User reviewed);
 
+    // Отзывы о человеке, свежие сверху — для блока отзывов в «Деталях заявки»
+    List<Review> findByReviewedOrderByCreatedAtDesc(User reviewed);
+
     @Query("SELECT r FROM Review r WHERE r.rideRequest.id = :rideRequestId AND r.reviewer.id = :reviewerId")
     Optional<Review> findByRideRequestIdAndReviewerId(@Param("rideRequestId") Long rideRequestId,
                                                       @Param("reviewerId") Long reviewerId);

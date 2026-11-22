@@ -8,7 +8,9 @@ import com.example.RideMate.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class ReviewService {
@@ -110,4 +112,30 @@ public class ReviewService {
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
         return reviewRepository.findByReviewed(user);
     }
+
+
+    /**
+     * Отзывы о человеке — для блока отзывов в «Деталях заявки».
+     * Возвращает имя автора, оценку, комментарий и дату каждого отзыва.
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getReviewsAbout(Long reviewedTelegramId) {
+        User reviewed = userRepository.findByTelegramId(reviewedTelegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        return reviewRepository.findByReviewedOrderByCreatedAtDesc(reviewed)
+                .stream()
+                .map(r -> {
+                    Map<String, Object> dto = new LinkedHashMap<>();
+                    User author = r.getReviewer();
+                    dto.put("authorName", author != null && author.getFirstName() != null
+                            ? author.getFirstName()
+                            : "Пользователь");
+                    dto.put("rating", r.getRating());
+                    dto.put("comment", r.getComment());
+                    dto.put("createdAt", r.getCreatedAt());
+                    return dto;
+                })
+                .toList();
+    }
+
 }
