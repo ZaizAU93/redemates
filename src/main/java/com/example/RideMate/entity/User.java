@@ -29,7 +29,19 @@ public class User {
     private Double rating;        // средний рейтинг
     private Integer tripCount;    // количество завершённых поездок
 
-// геттер и сеттер
+
+    @Column(nullable = false)
+    private Integer noShowCount = 0;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'ACTIVE'")
+    private UserStatus status = UserStatus.ACTIVE;
+
+    private String phone;
+
+    @Column(name = "phone_verified", nullable = false)
+    private Boolean phoneVerified = false;
+
 
 
 }

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>RideMate — админка</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f4f5f7; }
+    header { background: #1e1e1e; color: #fff; padding: 10px 16px; display: flex; gap: 12px; align-items: center; }
+    header input { padding: 6px 10px; border-radius: 6px; border: none; width: 260px; }
+    .tabs { display: flex; gap: 8px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #ddd; }
+    .tabs button { padding: 8px 14px; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; }
+    .tabs button.on { background: #0088cc; color: #fff; border-color: #0088cc; }
+    main { padding: 16px; max-width: 900px; margin: 0 auto; }
+    .card { background: #fff; border: 1px solid #e2e2e2; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .act { padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer; color: #fff; margin-right: 6px; }
+    .ok { background: #4CAF50; } .ban { background: #d32f2f; } .dis { background: #757575; } .warn { background: #f57f17; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; color: #fff; }
+    .b-ACTIVE { background: #4CAF50; } .b-RESTRICTED { background: #f57f17; } .b-BANNED { background: #d32f2f; }
+    .stat { display: flex; gap: 14px; flex-wrap: wrap; }
+    .stat div { background: #fff; border: 1px solid #e2e2e2; border-radius: 10px; padding: 12px 18px; font-size: 22px; font-weight: 700; }
+    .stat span { display: block; font-size: 12px; color: #777; font-weight: 400; }
+    .muted { color: #777; font-size: 13px; }
+    input.s { padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; width: 240px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+<header>
+  <strong>RideMate Admin</strong>
+  <input id="token" type="password" placeholder="админ-токен">
+  <button class="act ok" onclick="loadAll()">Войти</button>
+</header>
+<div class="tabs">
+  <button id="t-reports" class="on" onclick="show('reports')">Жалобы</button>
+  <button id="t-users" onclick="show('users')">Пользователи</button>
+  <button id="t-disputes" onclick="show('disputes')">Споры</button>
+  <button id="t-stats" onclick="show('stats')">Статистика</button>
+  <button id="t-support" onclick="show('support')">Поддержка</button>
+</div>
+<main id="content"></main>
+
+<script>
+  const API = '/api/admin';
+  const tok = () => document.getElementById('token').value.trim() || localStorage.getItem('adminToken') || '';
+  function saveTok() { localStorage.setItem('adminToken', tok()); }
+
+  let tab = 'reports';
+  function show(t) {
+    tab = t;
+    ['reports', 'users', 'disputes', 'stats', 'support'].forEach(x =>
+            document.getElementById('t-' + x).classList.toggle('on', x === t));
+    loadAll();
+  }
+
+  async function apiGet(path) {
+    const r = await fetch(API + path, { headers: { 'X-Admin-Token': tok() } });
+    if (r.status === 403) { content.innerHTML = '<p>Неверный токен. Введите его в поле сверху.</p>'; throw new Error('403'); }
+    return r.json();
+  }
+  async function apiPost(path, params) {
+    const url = params ? API + path + '?' + new URLSearchParams(params) : API + path;
+    const r = await fetch(url, { method: 'POST', headers: { 'X-Admin-Token': tok() } });
+    if (!r.ok) alert('Ошибка: ' + await r.text());
+    return r.ok;
+  }
+
+  async function loadAll() {
+    saveTok();
+    const content = document.getElementById('content');
+    try {
+      if (tab === 'reports') await loadReports(content);
+      else if (tab === 'users') await loadUsers(content);
+      else if (tab === 'disputes') await loadDisputes(content);
+      else if (tab === 'support') await loadSupport(content);
+      else await loadStats(content);
+    } catch (e) { /* 403 уже показан */ }
+  }
+
+  async function loadReports(content) {
+    const reports = await apiGet('/reports');
+    if (reports.length === 0) { content.innerHTML = '<p class="muted">Новых жалоб нет.</p>'; return; }
+    content.innerHTML = reports.map(r => `
+        <div class="card">
+            <div><strong>${esc(r.reporter)}</strong> (tg ${r.reporterTg}) → <strong>${esc(r.reported)}</strong> (tg ${r.reportedTg})</div>
+            <div>Причина: <b>${esc(r.reason)}</b>${r.details ? ' — ' + esc(r.details) : ''}</div>
+            <div class="muted">${new Date(r.createdAt).toLocaleString()} · статус жалобы: ${r.status} · статус нарушителя: ${r.reportedStatus}</div>
+            <div style="margin-top:8px;">
+                <button class="act dis" onclick="resolveReport(${r.id},'DISMISS')">Отклонить жалобу</button>
+                <button class="act ok" onclick="resolveReport(${r.id},'UNBAN')">Снять ограничения</button>
+                <button class="act ban" onclick="resolveReport(${r.id},'BAN')">Забанить</button>
+            </div>
+        </div>`).join('');
+  }
+  async function resolveReport(id, decision) {
+    if (await apiPost(`/reports/${id}/resolve`, { decision })) loadAll();
+  }
+
+  async function loadUsers(content) {
+    content.innerHTML = '<input class="s" id="uq" placeholder="Имя или @username" oninput="usersDebounce()"><div id="userList">…</div>';
+    renderUsers(await apiGet('/users?q='));
+  }
+  let uTimer = null;
+  function usersDebounce() { clearTimeout(uTimer); uTimer = setTimeout(loadUsersList, 400); }
+  async function loadUsersList() { renderUsers(await apiGet('/users?q=' + encodeURIComponent(document.getElementById('uq').value))); }
+  function renderUsers(users) {
+    document.getElementById('userList').innerHTML = users.map(u => `
+        <div class="card">
+            <div><strong>${esc(u.name)}</strong> ${u.username ? '@' + esc(u.username) : ''} · tg ${u.telegramId}</div>
+            <div><span class="badge b-${u.status}">${u.status}</span>
+                 ⭐ ${u.rating ?? '—'} · поездок: ${u.tripCount ?? 0} · срывов: ${u.noShowCount}</div>
+            <div style="margin-top:8px;">
+                ${u.status === 'BANNED' || u.status === 'RESTRICTED'
+            ? `<button class="act ok" onclick="userAction(${u.id},'unban')">Разблокировать</button>`
+            : `<button class="act ban" onclick="userAction(${u.id},'ban')">Забанить</button>`}
+            </div>
+        </div>`).join('') || '<p class="muted">Не найдено.</p>';
+  }
+  async function userAction(id, action) { if (await apiPost(`/users/${id}/${action}`)) loadAll(); }
+
+  async function loadDisputes(content) {
+    const disputes = await apiGet('/disputes');
+    if (disputes.length === 0) { content.innerHTML = '<p class="muted">Спорных поездок нет.</p>'; return; }
+    content.innerHTML = disputes.map(d => `
+        <div class="card">
+            <div><strong>Матч #${d.matchId}</strong> · заявка #${d.rideRequestId}</div>
+            <div>${d.ownerIsDriver ? '🚗 ' + d.owner + ' ↔ 🚶 ' + d.responder : '🚶 ' + d.owner + ' ↔ 🚗 ' + d.responder}</div>
+            <div class="muted">Отчёт водителя: ${d.driverOutcome} · отчёт пассажира: ${d.passengerOutcome} · выезд: ${d.departureTime}</div>
+            <div style="margin-top:8px;">
+                <button class="act ok" onclick="resolveDispute(${d.matchId},'DRIVER')">Прав водитель</button>
+                <button class="act warn" onclick="resolveDispute(${d.matchId},'PASSENGER')">Прав пассажир</button>
+                <button class="act dis" onclick="resolveDispute(${d.matchId},'VOID')">Без штрафа</button>
+            </div>
+        </div>`).join('');
+  }
+  async function resolveDispute(id, decision) { if (await apiPost(`/disputes/${id}/resolve`, { decision })) loadAll(); }
+
+  async function loadStats(content) {
+    const s = await apiGet('/stats');
+    content.innerHTML = `<div class="stat">
+        <div>${s.users}<span>пользователей</span></div>
+        <div>${s.activeRides}<span>активных заявок</span></div>
+        <div>${s.completedRides}<span>завершённых поездок</span></div>
+        <div>${s.restricted}<span>ограниченных</span></div>
+        <div>${s.banned}<span>забаненных</span></div>
+        <div>${s.newReports}<span>новых жалоб</span></div>
+    </div>`;
+  }
+
+  // ===== Обратная связь =====
+
+  const TOPIC_LABELS = { PROBLEM: '🐛 Проблема', IDEA: '💡 Идея', QUESTION: '❓ Вопрос' };
+
+  async function loadSupport(content) {
+    const r = await fetch('/api/support/admin/all', { headers: { 'X-Admin-Token': tok() } });
+    if (!r.ok) { content.innerHTML = '<p class="muted">Не удалось загрузить обращения.</p>'; return; }
+    const items = await r.json();
+    const fresh = items.filter(i => i.status === 'NEW').length;
+    if (items.length === 0) { content.innerHTML = '<p class="muted">Обращений нет.</p>'; return; }
+    content.innerHTML = items.map(item => `
+        <div class="card" style="${item.status === 'NEW' ? 'border-color:#ff6f00;border-width:2px;' : ''}">
+            <div><strong>${TOPIC_LABELS[item.topic] || esc(item.topic)}</strong>
+                 <span class="muted"> · ${esc(item.userName)} (tg ${item.userTelegramId}) · ${new Date(item.createdAt).toLocaleString()}</span></div>
+            <div style="margin-top:6px;white-space:pre-wrap;">${esc(item.message)}</div>
+            ${item.status === 'RESOLVED'
+            ? '<div style="color:#2e7d32;font-size:12px;margin-top:4px;">✓ Решено</div>'
+            : `<div style="margin-top:8px;"><button class="act ok" onclick="resolveSupport(${item.id})">Отметить решённым</button></div>`}
+        </div>`).join('') + (fresh ? `<p class="muted">Новых обращений: ${fresh}</p>` : '');
+  }
+  async function resolveSupport(id) {
+    const r = await fetch(`/api/support/admin/${id}/resolve`, {
+      method: 'PUT', headers: { 'X-Admin-Token': tok() }
+    });
+    if (!r.ok) alert('Ошибка: ' + await r.text());
+    else loadAll();
+  }
+
+  function esc(s) { return (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+</script>
+</body>
+</html>

@@ -10,17 +10,22 @@
     <style>
         :root {
             --primary: #0088cc;
-            --primary-dark: #006699;
-            --passenger: #4CAF50;
-            --driver: #2196F3;
-            --bg: #f0f2f5;
+            --primary-dark: #006da3;
+            --primary-soft: #e8f4fc;
+            --passenger: #2e7d32;
+            --passenger-soft: #e6f4ea;
+            --driver: #1a73e8;
+            --driver-soft: #e3f2fd;
+            --bg: #f2f4f7;
             --card-bg: #ffffff;
-            --text-primary: #1a1a1a;
-            --text-secondary: #606770;
-            --border: #e0e0e0;
-            --shadow: 0 2px 8px rgba(0,0,0,0.08);
+            --text-primary: #1c2333;
+            --text-secondary: #6b7280;
+            --border: #e5e8ee;
+            --shadow: 0 1px 3px rgba(16,24,40,.06);
             --radius: 16px;
             --nav-height: 64px;
+            --orange: #ff6f00;
+
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -35,141 +40,199 @@
             padding-bottom: calc(var(--nav-height) + 20px);
         }
         .header {
-            background: white; padding: 16px; box-shadow: var(--shadow);
-            border-radius: 0 0 var(--radius) var(--radius); margin-bottom: 16px;
+            background: transparent; padding: 14px 16px 8px;
             display: flex; align-items: center; justify-content: space-between;
         }
-        .header .greeting { font-size: 18px; font-weight: 600; }
-        .role-badge { padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: 500; }
-        .role-badge.passenger { background: #e8f5e9; color: var(--passenger); }
-        .role-badge.driver { background: #e3f2fd; color: var(--driver); }
-
-        .screen { display: none; padding: 0 16px; }
-        .screen.active { display: block; }
-
-        .card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 16px; }
-        .card h3 { font-size: 18px; margin-bottom: 12px; }
-        .field { margin-bottom: 12px; }
-        .field label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
-        input[type="text"], input[type="datetime-local"], input[type="number"], textarea {
-            width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
-            font-size: 16px; background: #fafafa; transition: border-color 0.2s;
+        .header .greeting { font-size: 20px; font-weight: 700; }
+        .header .greeting small { font-size: 13px; color: var(--orange, #ff6f00); font-weight: 600; }
+        .role-badge { padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+        .role-badge.passenger { background: var(--passenger-soft); color: var(--passenger); }
+        .role-badge.driver { background: var(--driver-soft); color: var(--driver); }
+        .profile-btn {
+            width: 40px; height: 40px; border-radius: 50%; border: none;
+            background: linear-gradient(135deg, var(--primary), #6ab7e8);
+            color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0;
         }
-        input:focus, textarea:focus { outline: none; border-color: var(--primary); background: #fff; }
-        select { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 16px; background: #fafafa; appearance: none; -webkit-appearance: none; }
-        .btn { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+
+        .screen { display: none; padding: 0 14px; }
+        .screen.active { display: block; }
+        .screen-title { font-size: 22px; font-weight: 700; margin: 6px 0 14px; }
+
+        .card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 12px; }
+        .card h3 { font-size: 17px; margin-bottom: 12px; }
+        .field { margin-bottom: 14px; }
+        .field label, .field-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
+        input[type="text"], input[type="datetime-local"], input[type="number"], textarea, select {
+            width: 100%; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 12px;
+            font-size: 16px; background: #fafbfc; transition: border-color .15s; color: var(--text-primary);
+        }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); background: #fff; }
+        .btn { width: 100%; padding: 15px; background: var(--primary); color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background .15s; }
         .btn:active { background: var(--primary-dark); }
-        .btn-secondary { background: #e0e0e0; color: var(--text-primary); font-weight: 500; }
-        .btn-sm { padding: 8px 12px; font-size: 14px; border-radius: 8px; width: auto; display: inline-block; margin: 8px 8px 0 0; }
-        .active-tab { background: var(--primary) !important; color: white; }
+        .btn-secondary { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+        .btn-sm { padding: 8px 14px; font-size: 13px; border-radius: 10px; width: auto; display: inline-block; margin: 8px 8px 0 0; }
+        .active-tab { background: var(--primary) !important; color: white !important; }
+
+        /* Сегментные вкладки (в стиле B) */
+        .segment { display: flex; background: #e9edf2; border-radius: 12px; padding: 3px; margin-bottom: 12px; }
+        .segment .btn-sm, .segment .btn { margin: 0; flex: 1; background: transparent; color: var(--text-secondary); border-radius: 10px; box-shadow: none; font-weight: 600; position: relative; }
+        .segment .btn-sm.active-tab { background: #fff !important; color: var(--text-primary); box-shadow: 0 1px 3px rgba(16,24,40,.15); }
 
         .time-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-        .time-chip { padding: 8px 14px; border-radius: 20px; background: #f0f4f8; border: 1px solid var(--border); font-size: 14px; cursor: pointer; }
-        .time-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .time-chip { padding: 8px 14px; border-radius: 20px; background: #fff; border: 1.5px solid var(--border); font-size: 13px; cursor: pointer; }
+        .time-chip.active { background: var(--primary); color: white; border-color: var(--primary); font-weight: 600; }
 
         .search-results { margin-top: 8px; }
-        .search-item { padding: 10px; background: #f9f9f9; border-radius: 8px; margin-bottom: 8px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
-        .search-item:hover { background: #f0f8ff; border-color: var(--primary); }
-        .search-item .place-name { font-weight: 500; }
-        .selected-place { background: #e8f4f8; padding: 8px 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+        .search-item { padding: 10px 12px; background: #fafbfc; border-radius: 10px; margin-bottom: 8px; cursor: pointer; border: 1.5px solid transparent; transition: all .15s; }
+        .search-item:hover, .search-item:active { background: var(--primary-soft); border-color: var(--primary); }
+        .search-item .place-name { font-weight: 500; font-size: 14px; }
+        .route-field {
+            display: flex; align-items: center; gap: 12px;
+            border: 1.5px solid var(--border); border-radius: 12px;
+            padding: 13px 14px; cursor: pointer; background: #fafbfc; transition: border-color .15s;
+        }
+        .route-field:active, .route-field:hover { border-color: var(--primary); background: var(--primary-soft); }
+        .route-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .route-dot.from { background: #1a73e8; }
+        .route-dot.to { background: #e53935; }
+        .route-text { min-width: 0; }
+        .route-text small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 2px; }
+        .route-placeholder { color: var(--text-secondary); font-size: 15px; }
+        .route-value { color: var(--text-primary); font-size: 15px; font-weight: 500;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .selected-place { background: var(--primary-soft); padding: 9px 12px; border-radius: 10px; margin: 8px 0; font-size: 14px; }
         .row-btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
         .row-btns .btn { margin: 0; }
 
-        .ride-list .ride-card { background: var(--card-bg); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: var(--shadow); }
-        .ride-card .ride-header { display: flex; align-items: center; margin-bottom: 8px; }
-        .ride-card .role-icon { font-size: 20px; margin-right: 8px; }
-        .ride-card .role-name { font-weight: 600; flex: 1; }
-        .ride-card .status-badge { font-size: 12px; padding: 2px 8px; border-radius: 20px; background: #f0f0f0; color: var(--text-secondary); }
-        .status-badge.active { background: #e8f5e9; color: #2e7d32; }
-        .status-badge.matched { background: #e3f2fd; color: #1565c0; }
-        .status-badge.completed { background: #e8f5e9; color: #2e7d32; }
-        .ride-card .time { font-size: 12px; color: #999; }
+        /* Карточки поездок */
+        .ride-list .ride-card, .ride-card { background: var(--card-bg); border-radius: 14px; padding: 13px 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+        .ride-card .ride-header { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; }
+        .ride-card .role-icon { font-size: 18px; }
+        .ride-card .role-name { font-weight: 600; flex: 1; font-size: 15px; }
+        .ride-card .time { font-size: 13px; color: var(--text-secondary); }
         .ride-card .details { font-size: 14px; margin: 4px 0; }
         .ride-card .actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
         .ride-card .actions .btn { margin: 0; }
 
-        .match-item { padding: 14px; background: white; border-radius: 12px; margin-bottom: 8px; box-shadow: var(--shadow); }
-        .match-status { font-size: 12px; padding: 2px 8px; border-radius: 20px; background: #f0f0f0; display: inline-block; margin-top: 4px; }
-        .match-status.pending, .match-status.confirming { background: #fff8e1; color: #f57f17; }
-        .match-status.confirmed, .match-status.accepted, .match-status.completed { background: #e8f5e9; color: #2e7d32; }
+        .status-badge, .status-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 8px; text-transform: uppercase; letter-spacing: .3px; background: #f0f0f0; color: var(--text-secondary); }
+        .status-badge.active, .match-status.accepted { background: var(--passenger-soft); color: var(--passenger); }
+        .status-badge.matched, .match-status.confirmed, .match-status.completed { background: var(--primary-soft); color: #1565c0; }
+        .status-badge.completed { background: #eee; color: var(--text-secondary); }
+        .match-status { font-size: 12px; padding: 3px 9px; border-radius: 8px; display: inline-block; margin-top: 4px; font-weight: 600; }
+        .match-status.pending, .match-status.confirming { background: #fff3e0; color: #e65100; }
         .match-status.rejected { background: #ffebee; color: #c62828; }
 
-        /* ---------- Чат ---------- */
-        .chat-item { padding: 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; cursor: pointer; }
+        /* Полоска совпадения */
+        .score-bar { height: 4px; border-radius: 2px; background: var(--border); margin-top: 7px; overflow: hidden; }
+        .score-bar i { display: block; height: 100%; border-radius: 2px; background: #ff6f00; }
+        .ride-score { font-size: 15px; font-weight: 700; color: #ff6f00; }
+
+        .match-item { padding: 14px; background: white; border-radius: 14px; margin-bottom: 8px; box-shadow: var(--shadow); }
+
+        /* ---------- Чаты ---------- */
+        .chat-item { padding: 12px 4px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; cursor: pointer; }
         .chat-item:last-child { border-bottom: none; }
-        .chat-item .avatar { width: 44px; height: 44px; border-radius: 50%; background: #e8f4f8; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+        .chat-item:active { background: var(--primary-soft); border-radius: 10px; }
+        .chat-item .avatar {
+            width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
+            background: linear-gradient(135deg, var(--primary), #6ab7e8);
+            color: #fff; font-weight: 700; font-size: 17px;
+            display: flex; align-items: center; justify-content: center;
+        }
         .chat-item .chat-mid { flex: 1; min-width: 0; }
-        .chat-item .chat-name { font-weight: 600; }
+        .chat-item .chat-name { font-weight: 600; font-size: 15px; }
         .chat-item .chat-preview { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .chat-item .chat-side { text-align: right; flex-shrink: 0; }
         .chat-item .chat-time { font-size: 11px; color: #999; }
-        .unread-badge { background: var(--primary); color: white; font-size: 12px; min-width: 20px; height: 20px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; margin-top: 4px; }
+        .unread-badge { background: var(--primary); color: white; font-size: 12px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; margin-top: 4px; }
 
-        .nav-badge { position: absolute; top: 8px; right: 8px; background: #e53935; color: white; font-size: 11px; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
-        .nav-item { position: relative; }
-
-        #chatMessages { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; max-height: 45vh; overflow-y: auto; }
+        #chatMessages { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; max-height: 48vh; overflow-y: auto; }
         .msg-row { display: flex; }
         .msg-row.mine { justify-content: flex-end; }
-        .bubble { max-width: 78%; padding: 9px 13px; border-radius: 16px; background: #f0f2f5; font-size: 15px; word-wrap: break-word; }
-        .msg-row.mine .bubble { background: var(--primary); color: white; border-bottom-right-radius: 4px; }
-        .msg-row:not(.mine) .bubble { border-bottom-left-radius: 4px; }
-        .bubble .meta { display: block; font-size: 10px; opacity: 0.7; margin-top: 3px; text-align: right; }
+        .bubble { max-width: 78%; padding: 9px 13px; border-radius: 16px; background: #f0f2f5; font-size: 15px; word-wrap: break-word; border-bottom-left-radius: 5px; }
+        .msg-row.mine .bubble { background: var(--primary); color: white; border-bottom-left-radius: 16px; border-bottom-right-radius: 5px; }
+        .bubble .meta { display: block; font-size: 10px; opacity: .7; margin-top: 3px; text-align: right; }
         .chat-input-row { display: flex; gap: 8px; margin-top: 8px; }
-        .chat-input-row input { flex: 1; }
-        .chat-input-row .btn { width: auto; padding: 12px 16px; margin: 0; }
+        .chat-input-row input { flex: 1; border-radius: 22px; }
+        .chat-input-row .btn { width: auto; padding: 12px 18px; margin: 0; border-radius: 50%; }
+        .chat-header-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .back-btn { width: 38px; height: 38px; border: none; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-size: 16px; cursor: pointer; flex-shrink: 0; }
+        .chat-header-row h3 { margin: 0; flex: 1; }
+
+        .nav-badge { position: absolute; top: 6px; right: calc(50% - 20px); background: #e53935; color: white; font-size: 10px; font-weight: 700; min-width: 17px; height: 17px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+        .nav-item { position: relative; }
 
         .bottom-nav {
             position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
             width: 100%; max-width: 430px; background: white;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            box-shadow: 0 -2px 12px rgba(16,24,40,.08);
             display: flex; justify-content: space-around; align-items: center;
-            height: var(--nav-height); border-radius: 20px 20px 0 0; z-index: 100;
+            height: var(--nav-height); border-radius: 18px 18px 0 0; z-index: 100;
+            border-top: 1px solid var(--border);
         }
-        .nav-item { display: flex; flex-direction: column; align-items: center; font-size: 12px; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; transition: color 0.2s; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 500; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; transition: color .15s; gap: 3px; }
         .nav-item.active { color: var(--primary); }
-        .nav-item .icon { font-size: 22px; margin-bottom: 2px; }
+        .nav-item .icon { font-size: 21px; line-height: 1; }
 
         .hidden { display: none !important; }
-        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,20,30,.45); z-index: 1000; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
-        .modal-content { background: white; padding: 16px; border-radius: 16px; width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
+        .modal-content { background: white; padding: 16px; border-radius: 18px; width: 92%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; }
-        #mapContainer { height: 300px; border-radius: 8px; }
+        .modal-header h3 { margin: 0; }
+        .close-btn { background: var(--primary-soft); color: var(--primary); border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 15px; cursor: pointer; }
+        #mapContainer { height: 300px; border-radius: 12px; }
 
         .stars { display: flex; justify-content: center; gap: 8px; margin-bottom: 12px; }
         .star { font-size: 32px; cursor: pointer; color: #ccc; }
         .star.active { color: #ffc107; }
 
         #mapScreen { padding: 0 0 16px; }
-        #mainMap { height: 55vh; min-height: 320px; border-radius: 0 0 var(--radius) var(--radius); }
+        #mainMap { height: 48vh; min-height: 300px; }
         .map-legend { display: flex; gap: 12px; padding: 10px 16px; font-size: 12px; color: var(--text-secondary); }
         .map-legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
         .legend-driver::before { background: var(--driver); }
         .legend-passenger::before { background: var(--passenger); }
+        #mapScreen .card { margin: 0 14px 12px; }
 
-        .leaflet-control-attribution { background: rgba(255,255,255,0.6); font-size: 9px; opacity: 0.6; margin: 4px; border-radius: 4px; }
-        .leaflet-control-attribution a { font-size: 9px; color: #555; }
+        .leaflet-control-attribution { background: rgba(255,255,255,.6); font-size: 9px; opacity: .6; margin: 4px; border-radius: 4px; }
 
         .waypoints-list { margin: 8px 0; }
-        .waypoint-item { display: flex; align-items: center; justify-content: space-between; background: #f9f9f9; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 14px; }
+        .waypoint-item { display: flex; align-items: center; justify-content: space-between; background: #fafbfc; border-radius: 10px; padding: 8px 12px; margin-bottom: 6px; font-size: 14px; }
         .waypoint-item button { background: none; border: none; color: #c62828; cursor: pointer; font-size: 16px; padding: 0 4px; }
-        .empty-state { text-align: center; padding: 20px 12px; color: var(--text-secondary); }
+        .empty-state { text-align: center; padding: 20px 12px; color: var(--text-secondary); line-height: 1.5; }
         .empty-state .btn { margin-top: 12px; }
-        .role-banner { background: #fff8e1; border: 1px solid #ffe082; border-radius: var(--radius); padding: 12px; margin: 0 16px 16px; font-size: 14px; }
+        .role-banner { background: #fff8e1; border: 1px solid #ffe082; border-radius: var(--radius); padding: 12px; margin: 0 14px 14px; font-size: 14px; }
         .role-banner .btn { margin-top: 8px; }
 
-        .details-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; gap: 12px; }
+        .details-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #f2f2f2; font-size: 14px; gap: 12px; }
         .details-row .k { color: var(--text-secondary); flex-shrink: 0; }
         .details-row .v { text-align: right; word-break: break-word; }
 
         .test-panel { position: fixed; top: 0; left: 0; right: 0; z-index: 2000; background: #1e1e1e; color: #fff; padding: 6px 10px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .test-panel button { border: none; border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #fff; }
-        .test-panel .tp-user { background: #0088cc; }
-        .test-panel .tp-seed { background: #4CAF50; }
-        .test-panel .tp-exit { background: #666; }
         .test-panel .tp-active { outline: 2px solid #ffc107; }
+
+        .profile-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+        .profile-avatar {
+            width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0;
+            background: linear-gradient(135deg, var(--primary), #6ab7e8);
+            color: #fff; font-weight: 700; font-size: 26px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .profile-hero-name { font-size: 19px; font-weight: 700; }
+        .profile-hero-sub { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+        .profile-stats { display: flex; gap: 8px; margin-bottom: 14px; }
+        .profile-stat {
+            flex: 1; background: #fafbfc; border: 1px solid var(--border);
+            border-radius: 12px; padding: 10px 6px; text-align: center;
+        }
+        .profile-stat-num { font-size: 16px; font-weight: 700; }
+        .profile-stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+        .profile-section-title { font-size: 15px; font-weight: 600; margin: 4px 0 10px; }
+        #vehicleFields input { margin-bottom: 0; }
+
     </style>
 </head>
 <body>
@@ -178,7 +241,7 @@
         <div class="greeting" id="greetingText">Привет!</div>
         <div style="display:flex; gap:10px; align-items:center;">
             <div class="role-badge hidden" id="roleBadge">🚶 Пассажир</div>
-            <span onclick="openProfileModal()" style="cursor:pointer; font-size:24px;">👤</span>
+            <button class="profile-btn" onclick="openProfileModal()">👤</button>
         </div>
     </div>
 
@@ -196,11 +259,11 @@
             <span class="legend-driver">Водители</span>
             <span class="legend-passenger">Пассажиры</span>
         </div>
-        <div class="card" style="margin: 0 16px 16px;">
+        <div class="card">
             <h3>Поездки рядом</h3>
             <div id="mapRideList"><div class="empty-state">Загружаем поездки рядом с вами…</div></div>
         </div>
-        <div class="card" style="margin: 0 16px 16px;">
+        <div class="card">
             <h3>Мои подписки на маршруты</h3>
             <div id="subsList"></div>
             <button class="btn btn-sm btn-secondary" onclick="subscribeFromCurrent()">🔔 Подписаться на маршрут из последней заявки</button>
@@ -208,29 +271,31 @@
     </div>
 
     <div id="createScreen" class="screen">
+        <div class="screen-title">Новая заявка</div>
         <div class="card">
-            <h3>Создать заявку</h3>
             <div class="field">
-                <label>Откуда</label>
-                <input type="text" id="fromInput" placeholder="Например: Минск">
-                <div class="row-btns">
-                    <button class="btn btn-secondary btn-sm" style="margin:0;" onclick="useMyLocationAsFrom()">📍 Моё местоположение</button>
-                    <button class="btn btn-secondary btn-sm" style="margin:0;" onclick="searchPlace('from')">🔍 Найти</button>
-                    <button class="btn btn-secondary btn-sm" style="margin:0;" onclick="openMapModal('from')">🗺️ На карте</button>
+                <label>Маршрут</label>
+                <div class="route-field" onclick="openAddressPicker('from')">
+                    <span class="route-dot from"></span>
+                    <div class="route-text">
+                        <div id="fromDisplay" class="route-placeholder">Откуда?</div>
+                        <small>Дом или текущее место</small>
+                    </div>
                 </div>
-                <div class="search-results" id="fromResults"></div>
+                <div class="route-field" style="margin-top:8px;" onclick="openAddressPicker('to')">
+                    <span class="route-dot to"></span>
+                    <div class="route-text">
+                        <div id="toDisplay" class="route-placeholder">Куда?</div>
+                        <small>Пункт назначения</small>
+                    </div>
+                </div>
+                <!-- Служебные поля: JS пишет в них, визуально скрыты -->
+                <input type="text" id="fromInput" class="hidden">
+                <input type="text" id="toInput" class="hidden">
                 <div class="selected-place hidden" id="fromSelected"></div>
-            </div>
-            <div class="field">
-                <label>Куда</label>
-                <input type="text" id="toInput" placeholder="Например: Гродно">
-                <div class="row-btns">
-                    <button class="btn btn-secondary btn-sm" style="margin:0;" onclick="searchPlace('to')">🔍 Найти</button>
-                    <button class="btn btn-secondary btn-sm" style="margin:0;" onclick="openMapModal('to')">🗺️ На карте</button>
-                </div>
-                <div class="search-results" id="toResults"></div>
                 <div class="selected-place hidden" id="toSelected"></div>
             </div>
+
             <div class="field hidden" id="waypointsField">
                 <label>Промежуточные точки (по пути)</label>
                 <div class="waypoints-list" id="waypointsList"></div>
@@ -264,26 +329,48 @@
             </div>
             <div class="field">
                 <label id="seatsLabel">Количество пассажиров</label>
-                <select id="passengerCountSelect">
-                    <option value="1">1 пассажир</option>
+                <div class="time-chips" id="passengerCountChips">
+                    <span class="time-chip active" onclick="setPassengerCount(1, this)">1</span>
+                    <span class="time-chip" onclick="setPassengerCount(2, this)">2</span>
+                    <span class="time-chip" onclick="setPassengerCount(3, this)">3</span>
+                    <span class="time-chip" onclick="setPassengerCount(4, this)">4</span>
+                </div>
+                <select id="passengerCountSelect" class="hidden">
+                    <option value="1" selected>1 пассажир</option>
                     <option value="2">2 пассажира</option>
                     <option value="3">3 пассажира</option>
                     <option value="4">4 пассажира</option>
                 </select>
             </div>
+
             <div class="field hidden" id="availableSeatsField">
                 <label>Свободные места</label>
-                <select id="availableSeatsSelect">
-                    <option value="1">1 место</option>
+                <div class="time-chips" id="availableSeatsChips">
+                    <span class="time-chip active" onclick="setAvailableSeats(1, this)">1</span>
+                    <span class="time-chip" onclick="setAvailableSeats(2, this)">2</span>
+                    <span class="time-chip" onclick="setAvailableSeats(3, this)">3</span>
+                    <span class="time-chip" onclick="setAvailableSeats(4, this)">4</span>
+                </div>
+                <select id="availableSeatsSelect" class="hidden">
+                    <option value="1" selected>1 место</option>
                     <option value="2">2 места</option>
                     <option value="3">3 места</option>
                     <option value="4">4 места</option>
                 </select>
+
             </div>
             <div class="field hidden" id="priceField">
                 <label>Цена за место (BYN)</label>
-                <input type="number" id="priceInput" min="0" step="0.5" placeholder="Например: 25">
+                <div class="time-chips" id="priceChips">
+                    <span class="time-chip active" onclick="setPriceChip('free', this)">Договоримся</span>
+                    <span class="time-chip" onclick="setPriceChip('5', this)">5 BYN</span>
+                    <span class="time-chip" onclick="setPriceChip('10', this)">10 BYN</span>
+                    <span class="time-chip" onclick="setPriceChip('15', this)">15 BYN</span>
+                    <span class="time-chip" onclick="setPriceChip('custom', this)">Своя цена</span>
+                </div>
+                <input type="number" id="priceInput" min="0" step="0.5" placeholder="Например: 25" class="hidden" style="margin-top:8px;">
             </div>
+
             <div class="field hidden" id="timeFlexibilityField">
                 <label>Максимальное отклонение времени</label>
                 <select id="timeFlexibilitySelect">
@@ -299,8 +386,7 @@
             </div>
             <button class="btn" id="createSubmitBtn" onclick="createRideRequest()">Создать и найти попутчиков</button>
             <button class="btn btn-secondary btn-sm" onclick="showRouteAlternatives()">🛣️ Показать варианты дороги</button>
-            <div id="routeChoiceHint" class="hint hidden"></div>
-
+            <div id="routeChoiceHint" class="hidden" style="font-size:13px;color:var(--text-secondary);margin-top:6px;"></div>
             <button class="btn btn-secondary hidden" id="cancelEditBtn" onclick="resetCreateForm()" style="margin-top:8px;">Отменить редактирование</button>
         </div>
         <div id="myRide" class="card hidden">
@@ -308,7 +394,7 @@
             <p id="myRideInfo" style="margin-bottom: 12px;"></p>
         </div>
         <div id="matchesBlock" class="card hidden">
-            <h3 style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                 Найденные попутчики
                 <button class="btn btn-sm btn-secondary" style="margin:0;" onclick="searchMatchesForActiveRide()">🔄 Обновить</button>
             </h3>
@@ -317,17 +403,16 @@
     </div>
 
     <div id="myRidesScreen" class="screen">
-        <div class="card">
-            <div style="display:flex; gap:8px; margin-bottom:12px;">
-                <button class="btn btn-sm" id="tabMyRides" onclick="switchRidesTab('myRides')">Мои заявки</button>
-                <button class="btn btn-sm" id="tabMyResponses" onclick="switchRidesTab('myResponses')">Мои отклики</button>
-            </div>
-            <div id="showAllRidesBtn" style="margin-bottom:12px;">
-                <button class="btn btn-sm btn-secondary" onclick="toggleShowAllRides()">Показать все</button>
-            </div>
-            <div id="myRidesList" class="ride-list"></div>
-            <div id="myResponsesList" class="ride-list hidden"></div>
+        <div class="screen-title">Заявки</div>
+        <div class="segment">
+            <button class="btn btn-sm" id="tabMyRides" onclick="switchRidesTab('myRides')">Мои заявки</button>
+            <button class="btn btn-sm" id="tabMyResponses" onclick="switchRidesTab('myResponses')">Мои отклики</button>
         </div>
+        <div id="showAllRidesBtn" style="margin-bottom:12px;">
+            <button class="btn btn-sm btn-secondary" onclick="toggleShowAllRides()">Показать все</button>
+        </div>
+        <div id="myRidesList" class="ride-list"></div>
+        <div id="myResponsesList" class="ride-list hidden"></div>
         <div id="responsesBlock" class="card hidden">
             <h3>Отклики на заявку</h3>
             <div id="responsesList"></div>
@@ -340,8 +425,10 @@
             <div id="chatsList"></div>
         </div>
         <div id="chatWindow" class="card hidden">
-            <button class="btn btn-secondary btn-sm" onclick="closeChatWindow()">← Назад</button>
-            <h3 id="chatTitle" style="margin-top:12px;">Чат</h3>
+            <div class="chat-header-row">
+                <button class="back-btn" onclick="closeChatWindow()">←</button>
+                <h3 id="chatTitle">Чат</h3>
+            </div>
             <div id="chatMessages"></div>
             <div class="chat-input-row">
                 <input type="text" id="messageInput" placeholder="Сообщение…" onkeydown="if(event.key==='Enter')sendMessage()">
@@ -361,14 +448,26 @@
             <span class="icon">📋</span><span>Заявки</span>
             <span class="nav-badge hidden" id="ridesBadge">0</span>
         </div>
-
-
         <div class="nav-item" data-screen="chatsScreen" onclick="switchScreen('chatsScreen')">
-            <span class="icon">💬</span><span>Сообщения</span>
+            <span class="icon">💬</span><span>Чаты</span>
             <span class="nav-badge hidden" id="msgBadge">0</span>
         </div>
     </div>
 </div>
+
+<div id="addressPickerModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="pickerTitle">Выберите точку</h3>
+            <button onclick="closeAddressPicker()" class="close-btn">✕</button>
+        </div>
+        <input type="text" id="pickerSearchInput" placeholder="Адрес или место…" autocomplete="off"
+               oninput="clearTimeout(pickerDebounceTimer); pickerDebounceTimer = setTimeout(pickerSearch, 400);">
+
+        <div class="search-results" id="pickerResults"></div>
+    </div>
+</div>
+
 
 <div id="mapModal" class="modal">
     <div class="modal-content">
@@ -388,9 +487,11 @@
             <button onclick="closeDetailsModal()" class="close-btn">✕</button>
         </div>
         <div id="detailsBody"></div>
+        <div id="detailsMap" style="height:180px; border-radius:12px; margin-top:12px;"></div>
         <div id="detailsActions" style="margin-top:12px;"></div>
     </div>
 </div>
+
 
 <div id="reviewModal" class="modal">
     <div class="modal-content">
@@ -416,23 +517,75 @@
             <h3>Профиль</h3>
             <button onclick="closeProfileModal()" class="close-btn">✕</button>
         </div>
-        <div id="profileInfo">
-            <p><strong>Имя:</strong> <span id="profileName"></span></p>
-            <p><strong>Username:</strong> <span id="profileUsername"></span></p>
-            <p><strong>Рейтинг:</strong> <span id="profileRating"></span></p>
-            <p><strong>Поездок:</strong> <span id="profileTripCount"></span></p>
-            <p><strong>Роль:</strong> <span id="profileRole"></span></p>
-            <div id="vehicleFields" class="hidden">
-                <p><strong>Автомобиль:</strong></p>
-                <input type="text" id="vehicleBrand" placeholder="Марка">
-                <input type="text" id="vehicleModel" placeholder="Модель">
-                <input type="text" id="vehicleColor" placeholder="Цвет">
-                <input type="number" id="vehicleSeats" placeholder="Количество мест">
-                <input type="text" id="vehiclePlateNumber" placeholder="Гос. номер">
-                <button class="btn btn-sm" onclick="saveVehicle()">Сохранить авто</button>
+        <div class="profile-hero">
+            <div class="profile-avatar" id="profileAvatar">?</div>
+            <div class="profile-hero-info">
+                <div class="profile-hero-name" id="profileName"></div>
+                <div class="profile-hero-sub" id="profileUsername"></div>
             </div>
-            <button class="btn btn-secondary" onclick="changeRoleFromProfile()">Сменить роль</button>
         </div>
+        <div class="profile-stats">
+            <div class="profile-stat">
+                <div class="profile-stat-num" id="profileStars">—</div>
+                <div class="profile-stat-label">Рейтинг</div>
+            </div>
+            <div class="profile-stat">
+                <div class="profile-stat-num" id="profileTripCount">0</div>
+                <div class="profile-stat-label">Поездок</div>
+            </div>
+            <div class="profile-stat">
+                <div class="profile-stat-num" id="profileRole">—</div>
+                <div class="profile-stat-label">Роль</div>
+            </div>
+        </div>
+
+        <div class="profile-section-title">📞 Телефон</div>
+        <div id="phoneStatus" style="font-size:14px; color:var(--text-secondary); margin-bottom:8px;">Загружаем…</div>
+        <div id="phoneForm" class="hidden">
+            <input type="tel" id="phoneInput" placeholder="+37529XXXXXXX">
+            <button class="btn btn-secondary btn-sm" onclick="requestPhoneCode()">Получить код в боте</button>
+            <div id="codeRow" class="hidden" style="margin-top:10px;">
+                <input type="text" id="phoneCodeInput" inputmode="numeric" maxlength="6" placeholder="Код из сообщения бота">
+                <button class="btn btn-sm" onclick="verifyPhoneCode()" style="margin-top:8px;">Подтвердить</button>
+            </div>
+        </div>
+
+
+        <div id="vehicleFields" class="hidden">
+            <div class="profile-section-title">🚗 Автомобиль</div>
+            <input type="text" id="vehicleBrand" placeholder="Марка">
+            <input type="text" id="vehicleModel" placeholder="Модель" style="margin-top:8px;">
+            <input type="text" id="vehicleColor" placeholder="Цвет" style="margin-top:8px;">
+            <input type="number" id="vehicleSeats" placeholder="Количество мест" style="margin-top:8px;">
+            <input type="text" id="vehiclePlateNumber" placeholder="Гос. номер" style="margin-top:8px;">
+            <button class="btn" onclick="saveVehicle()" style="margin-top:10px;">Сохранить авто</button>
+        </div>
+        <button class="btn btn-secondary" onclick="changeRoleFromProfile()" style="margin-top:12px;">Сменить роль</button>
+        <button class="btn btn-secondary" onclick="openSupportModal()" style="margin-top:8px;">💬 Обратная связь</button>
+    </div>
+</div>
+
+
+<div id="supportModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Обратная связь</h3>
+            <button onclick="closeSupportModal()" class="close-btn">✕</button>
+        </div>
+        <div class="field">
+            <label>Тема</label>
+            <select id="supportTopic">
+                <option value="PROBLEM">🐛 Что-то сломалось</option>
+                <option value="IDEA">💡 Идея / предложение</option>
+                <option value="QUESTION">❓ Вопрос</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Сообщение</label>
+            <textarea id="supportMessage" rows="4" placeholder="Опишите подробно…"></textarea>
+        </div>
+        <button class="btn" onclick="sendSupport()">Отправить</button>
+        <div id="supportMyList" style="margin-top:12px;"></div>
     </div>
 </div>
 

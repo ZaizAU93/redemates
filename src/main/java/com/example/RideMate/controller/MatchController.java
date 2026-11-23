@@ -2,6 +2,9 @@ package com.example.RideMate.controller;
 
 import com.example.RideMate.dto.MatchDTO;
 import com.example.RideMate.dto.MatchResponseDTO;
+import com.example.RideMate.entity.MatchStatus;
+import com.example.RideMate.entity.OutcomeReport;
+import com.example.RideMate.entity.User;
 import com.example.RideMate.service.MatchService;
 import com.example.RideMate.service.TelegramAuthService;
 import org.springframework.http.ResponseEntity;
@@ -96,4 +99,16 @@ public class MatchController {
         matchService.cancelMatch(matchId, telegramId);
         return ResponseEntity.ok().build();
     }
+
+
+    @PutMapping("/{matchId}/outcome")
+    public ResponseEntity<?> reportOutcome(@PathVariable Long matchId,
+                                           @RequestParam OutcomeReport outcome,
+                                           @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+        Long telegramId = authService.authenticate(initData);
+        MatchStatus status = matchService.reportOutcome(matchId, telegramId, outcome);
+        return ResponseEntity.ok(Map.of("status", status.name()));
+    }
+
+
 }

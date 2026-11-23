@@ -1,6 +1,5 @@
 package com.example.RideMate.entity;
 
-
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -38,4 +37,12 @@ public class Match {
     @Column(name = "confirmed_at")
     private LocalDateTime confirmedAt;
 
+    // Исход поездки: что отчиталась каждая из сторон
+    @Enumerated(EnumType.STRING)
+    @Column(name = "driver_outcome")
+    private OutcomeReport driverOutcome;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "passenger_outcome")
+    private OutcomeReport passengerOutcome;
 }

@@ -4,6 +4,8 @@ const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
+
+const BOT_USERNAME = 'ridemates_bot';
 // ---------- ТЕСТОВЫЙ РЕЖИМ (обычный браузер без Telegram) ----------
 const TEST_USERS = [
     { id: 111111, name: 'Вася — водитель', firstName: 'Вася' },
@@ -278,12 +280,20 @@ async function loadNearbyRides() {
     const toLat = knownTo ? knownTo.latitude : from.latitude;
     const toLon = knownTo ? knownTo.longitude : from.longitude;
     // Если назначение известно — коридор по «Куда» 30 км; если нет — не отсекаем, как раньше
-    const toRadius = knownTo ? 30000 : 30000000;
+    const toRadius = knownTo ? searchRadiusKm * 1000 : 30000000;
 
-    const url = `/api/rides/matches?role=${oppositeRole(currentUser.role)}`
+
+    let url = `/api/rides/matches?role=${oppositeRole(currentUser.role)}`
         + `&fromLat=${from.latitude}&fromLon=${from.longitude}`
         + `&toLat=${toLat}&toLon=${toLon}`
-        + `&fromRadiusMeters=30000&toRadiusMeters=${toRadius}&limit=10`;
+        + `&fromRadiusMeters=${searchRadiusKm * 1000}&toRadiusMeters=${toRadius}&limit=10`;
+    // Время выезда и гибкость берём из активной заявки — тогда проценты
+    // на «Карте» и в «Найденных попутчиках» совпадут
+    if (window.activeRideDepartureTime) {
+        url += `&departureTime=${encodeURIComponent(window.activeRideDepartureTime)}`;
+        if (window.activeRideFlexibility) url += `&flexibilityMinutes=${window.activeRideFlexibility}`;
+    }
+
 
     try {
         const resp = await fetch(url, { headers: { 'X-Telegram-Init-Data': tgInitData } });
@@ -334,12 +344,14 @@ function renderMapRides(rides) {
             <div class="ride-header">
                 <span class="role-icon">${roleEmoji(ride.role)}</span>
                 <span class="role-name">${escapeHtml(ride.userName)}</span>
-                <span style="color:#ff6f00;font-weight:600;">🔥 ${Math.round(ride.score)}%</span>
+                <span class="ride-score">🔥 ${Math.round(ride.score)}%</span>
             </div>
             <div class="time">${ride.departureTime ? escapeHtml(new Date(ride.departureTime).toLocaleString()) : 'Время не указано'}${ride.availableSeats ? ` · мест: ${ride.availableSeats}` : ''}</div>
             ${ride.pricePerSeat ? `<div class="details">💰 ${ride.pricePerSeat} BYN за место</div>` : ''}
             ${ride.note ? `<div class="details">${escapeHtml(ride.note)}</div>` : ''}
+            <div class="score-bar"><i style="width:${Math.min(100, Math.round(ride.score))}%"></i></div>
         `;
+
         const respondBtn = document.createElement('button');
         if (respondedRideIds.has(ride.id)) {
             respondBtn.className = 'btn btn-sm btn-secondary';
@@ -395,7 +407,111 @@ function assignPlace(type, place) {
     sel.innerHTML = `📍 ${escapeHtml(place.displayName)}`;
     const inp = document.getElementById(type === 'from' ? 'fromInput' : 'toInput');
     if (inp) inp.value = place.displayName;
+    const disp = document.getElementById(type === 'from' ? 'fromDisplay' : 'toDisplay');
+    if (disp) { disp.textContent = place.displayName; disp.className = 'route-value'; }
+
 }
+
+//------------------------
+// ---------- Пикер адреса ----------
+
+let pickerType = null;
+let pickerDebounceTimer = null;
+
+function openAddressPicker(type) {
+    pickerType = type;
+    document.getElementById('pickerTitle').textContent = type === 'from' ? 'Откуда поедем?' : 'Куда поедем?';
+    document.getElementById('addressPickerModal').classList.add('active');
+    const input = document.getElementById('pickerSearchInput');
+    input.value = '';
+    renderPickerStatic();
+    setTimeout(() => input.focus(), 100);
+}
+
+function closeAddressPicker() {
+    document.getElementById('addressPickerModal').classList.remove('active');
+    pickerType = null;
+}
+
+function renderPickerStatic() {
+    const box = document.getElementById('pickerResults');
+    let html = '';
+    if (pickerType === 'from') {
+        html += `
+            <div class="search-item" onclick="pickerUseMyLocation()">
+                <div class="place-name">📍 Моё местоположение</div>
+            </div>`;
+    }
+    html += `
+        <div class="search-item" onclick="openAddressPickerMap()">
+            <div class="place-name">🗺️ Выбрать на карте</div>
+        </div>`;
+    box.innerHTML = html;
+}
+
+function renderPickerResults(places) {
+    const box = document.getElementById('pickerResults');
+    let html = '';
+    if (pickerType === 'from') {
+        html += `
+            <div class="search-item" onclick="pickerUseMyLocation()">
+                <div class="place-name">📍 Моё местоположение</div>
+            </div>`;
+    }
+    if (places.length === 0) {
+        html += '<p style="font-size:14px;color:var(--text-secondary);padding:8px 4px;">Ничего не найдено</p>';
+    } else {
+        places.forEach(place => {
+            html += `
+                <div class="search-item" onclick='pickPlace(${JSON.stringify(place).replaceAll("'", "&#039;")})'>
+                    <div class="place-name">${escapeHtml(place.displayName)}</div>
+                </div>`;
+        });
+    }
+    html += `
+        <div class="search-item" onclick="openAddressPickerMap()">
+            <div class="place-name">🗺️ Выбрать на карте</div>
+        </div>`;
+    box.innerHTML = html;
+}
+
+async function pickerSearch() {
+    const query = document.getElementById('pickerSearchInput').value.trim();
+    if (!query) { renderPickerStatic(); return; }
+    try {
+        const resp = await fetch(`/api/geocoding?q=${encodeURIComponent(query)}`);
+        renderPickerResults(await resp.json());
+    } catch (e) {
+        renderPickerResults([]);
+    }
+}
+
+function pickPlace(place) {
+    assignPlace(pickerType, place);
+    closeAddressPicker();
+}
+
+async function pickerUseMyLocation() {
+    const loc = await requestUserLocation();
+    if (!loc) { showMessage('Не удалось получить местоположение', 'Ошибка'); return; }
+    userLocation = loc;
+    let name = `Моё местоположение (${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)})`;
+    try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${loc.lat}&lon=${loc.lon}&format=json&accept-language=ru`);
+        const data = await r.json();
+        if (data?.display_name) name = data.display_name;
+    } catch (e) { /* остаётся запасное имя */ }
+    assignPlace(pickerType, { displayName: name, latitude: loc.lat, longitude: loc.lon });
+    closeAddressPicker();
+}
+
+function openAddressPickerMap() {
+    const type = pickerType;
+    closeAddressPicker();
+    openMapModal(type);
+}
+
+
 
 async function useMyLocationAsFrom() {
     const loc = await requestUserLocation();
@@ -442,6 +558,34 @@ function setRadius(km) {
     document.querySelectorAll('#radiusChips .time-chip').forEach(c =>
         c.classList.toggle('active', parseInt(c.dataset.km) === km));
 }
+
+function markChips(containerId, chipEl) {
+    document.querySelectorAll(`#${containerId} .time-chip`).forEach(c => c.classList.remove('active'));
+    if (chipEl) chipEl.classList.add('active');
+}
+
+function setPassengerCount(n, chip) {
+    document.getElementById('passengerCountSelect').value = String(n);
+    markChips('passengerCountChips', chip);
+}
+
+function setAvailableSeats(n, chip) {
+    document.getElementById('availableSeatsSelect').value = String(n);
+    markChips('availableSeatsChips', chip);
+}
+
+function setPriceChip(mode, chip) {
+    const input = document.getElementById('priceInput');
+    if (mode === 'custom') {
+        input.classList.remove('hidden');
+        input.focus();
+    } else {
+        input.classList.add('hidden');
+        input.value = mode === 'free' ? '' : mode;
+    }
+    markChips('priceChips', chip);
+}
+
 
 function onOpenCreateScreen() {
     if (!selectedFrom) useMyLocationAsFrom();
@@ -679,6 +823,14 @@ async function loadActiveRide() {
     }
     const ride = rides[0];
     currentRideId = ride.id;
+
+    window.activeRideDepartureTime = ride.departureTime || null;
+    window.activeRideFlexibility = ride.timeFlexibilityMinutes || 30;
+    window.activeRideFrom = { latitude: ride.fromLat, longitude: ride.fromLon };
+    window.activeRideTo = { latitude: ride.toLat, longitude: ride.toLon };
+
+
+
     block.classList.remove('hidden');
     const timeStr = ride.departureTime ? new Date(ride.departureTime).toLocaleString() : 'время не указано';
     document.getElementById('myRideInfo').innerHTML = `
@@ -720,11 +872,19 @@ function startEditRide(ride) {
     document.getElementById('fromSelected').innerHTML = `📍 ${escapeHtml(selectedFrom.displayName)}`;
     document.getElementById('toSelected').classList.remove('hidden');
     document.getElementById('toSelected').innerHTML = `📍 ${escapeHtml(selectedTo.displayName)}`;
+    const fd = document.getElementById('fromDisplay'), td = document.getElementById('toDisplay');
+    if (fd) { fd.textContent = selectedFrom.displayName; fd.className = 'route-value'; }
+    if (td) { td.textContent = selectedTo.displayName; td.className = 'route-value'; }
+
     if (ride.departureTime) document.getElementById('departureTimeInput').value = toLocalISO(new Date(ride.departureTime));
     if (ride.passengerCount) document.getElementById('passengerCountSelect').value = String(ride.passengerCount);
     if (ride.availableSeats) document.getElementById('availableSeatsSelect').value = String(ride.availableSeats);
     if (ride.timeFlexibilityMinutes) document.getElementById('timeFlexibilitySelect').value = String(ride.timeFlexibilityMinutes);
     document.getElementById('priceInput').value = ride.pricePerSeat ?? '';
+    if (ride.pricePerSeat) {
+        document.getElementById('priceInput').classList.remove('hidden');
+        markChips('priceChips', null);
+    }
     document.getElementById('noteInput').value = ride.note || '';
     document.getElementById('cancelEditBtn').classList.remove('hidden');
     document.getElementById('createSubmitBtn').textContent = 'Сохранить изменения';
@@ -746,7 +906,18 @@ async function cancelMyRide() {
     });
     if (resp.ok) {
         currentRideId = null;
+        window.activeRideDepartureTime = null;
+        window.activeRideFlexibility = null;
+        window.activeRideFrom = null;
+        window.activeRideTo = null;
+
+
         resetCreateForm();
+        ['fromDisplay', 'toDisplay'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) { el.textContent = id === 'fromDisplay' ? 'Откуда?' : 'Куда?'; el.className = 'route-placeholder'; }
+        });
+
         document.getElementById('myRide').classList.add('hidden');
         document.getElementById('matchesBlock').classList.add('hidden');
         selectedFrom = selectedTo = null;
@@ -920,6 +1091,21 @@ async function loadResponsesForRide(rideId) {
             };
             item.appendChild(cancelBtn);
         }
+        if (match.status === 'CONFIRMED') {
+            const ownerRole = match.rideRequest?.role || oppositeRole(currentUser.role);
+            const counterpart = ownerRole === 'DRIVER' ? 'NO_SHOW_PASSENGER' : 'NO_SHOW_DRIVER';
+            const okBtn = document.createElement('button');
+            okBtn.className = 'btn btn-sm';
+            okBtn.textContent = '✅ Состоялась';
+            okBtn.onclick = () => reportOutcome(match.id, 'COMPLETED');
+            item.appendChild(okBtn);
+            const noBtn = document.createElement('button');
+            noBtn.className = 'btn btn-sm btn-secondary';
+            noBtn.textContent = counterpart === 'NO_SHOW_PASSENGER' ? '⚠️ Пассажир не пришёл' : '⚠️ Водитель не выехал';
+            noBtn.onclick = () => reportOutcome(match.id, counterpart);
+            item.appendChild(noBtn);
+        }
+
         list.appendChild(item);
     });
 }
@@ -937,12 +1123,16 @@ async function loadMyResponses() {
         let contactInfo = '';
         if (match.status === 'CONFIRMED' && match.contactUsername) contactInfo = `<div>📞 @${escapeHtml(match.contactUsername)}</div>`;
         const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
+        const rideInfo = match.rideRequest
+            ? `${roleEmoji(match.rideRequest.role)} ${escapeHtml(match.rideRequest.fromAddress || `(${match.rideRequest.fromLat.toFixed(2)}, …)`)} → ${escapeHtml(match.rideRequest.toAddress || '')}`
+            : `Заявка #${escapeHtml(match.rideRequestId)}`;
         item.innerHTML = `
-            <div class="responder">Заявка #${escapeHtml(match.rideRequestId)}</div>
+            <div class="responder">${rideInfo}</div>
             <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}${escapeHtml(seatsNote)}</span>
             <div class="time">${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
             ${contactInfo}
         `;
+
         if (match.status === 'PENDING') {
             const cancelBtn = document.createElement('button');
             cancelBtn.className = 'btn btn-sm btn-secondary';
@@ -966,6 +1156,21 @@ async function loadMyResponses() {
             };
             item.appendChild(confirmBtn);
         }
+        if (match.status === 'CONFIRMED') {
+            const ownerRole = match.rideRequest?.role || oppositeRole(currentUser.role);
+            const counterpart = ownerRole === 'DRIVER' ? 'NO_SHOW_PASSENGER' : 'NO_SHOW_DRIVER';
+            const okBtn = document.createElement('button');
+            okBtn.className = 'btn btn-sm';
+            okBtn.textContent = '✅ Состоялась';
+            okBtn.onclick = () => reportOutcome(match.id, 'COMPLETED');
+            item.appendChild(okBtn);
+            const noBtn = document.createElement('button');
+            noBtn.className = 'btn btn-sm btn-secondary';
+            noBtn.textContent = counterpart === 'NO_SHOW_PASSENGER' ? '⚠️ Пассажир не пришёл' : '⚠️ Водитель не выехал';
+            noBtn.onclick = () => reportOutcome(match.id, counterpart);
+            item.appendChild(noBtn);
+        }
+
         list.appendChild(item);
     });
 }
@@ -983,8 +1188,9 @@ async function loadChats() {
         const item = document.createElement('div');
         item.className = 'chat-item';
         const timeStr = chat.lastMessageTime ? new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const initial = (chat.peerName || '?').trim().charAt(0).toUpperCase();
         item.innerHTML = `
-            <div class="avatar">${chat.peerUsername ? '@' : '👤'}</div>
+            <div class="avatar">${escapeHtml(initial)}</div>
             <div class="chat-mid">
                 <div class="chat-name">${escapeHtml(chat.peerName)}</div>
                 <div class="chat-preview">${chat.lastMessageText ? escapeHtml(chat.lastMessageText) : 'Нет сообщений — напишите первым'}</div>
@@ -994,6 +1200,7 @@ async function loadChats() {
                 ${chat.unreadCount > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : ''}
             </div>
         `;
+
         item.onclick = () => openChat(chat.matchId, chat.peerName);
         list.appendChild(item);
     });
@@ -1135,10 +1342,12 @@ async function loadSubscriptions() {
         list.innerHTML = '<p class="empty-state">Подписок нет. Создайте заявку — и подпишитесь на этот маршрут.</p>';
         return;
     }
-    subs.forEach(sub => {
+    subs.forEach(async sub => {
+        const fromAddr = await reverseGeocodeShort(sub.fromLat, sub.fromLon);
+        const toAddr = await reverseGeocodeShort(sub.toLat, sub.toLon);
         const item = document.createElement('div');
         item.className = 'waypoint-item';
-        item.innerHTML = `<span>📍 ${sub.fromLat.toFixed(3)}, ${sub.fromLon.toFixed(3)} → ${sub.toLat.toFixed(3)}, ${sub.toLon.toFixed(3)} · ${sub.radiusMeters / 1000} км</span>`;
+        item.innerHTML = `<span>📍 ${escapeHtml(fromAddr)} → ${escapeHtml(toAddr)} · ${sub.radiusMeters / 1000} км</span>`;
         const del = document.createElement('button');
         del.textContent = '✕';
         del.onclick = async () => {
@@ -1148,6 +1357,7 @@ async function loadSubscriptions() {
         item.appendChild(del);
         list.appendChild(item);
     });
+
 }
 
 function subscribeFromCurrent() {
@@ -1284,7 +1494,11 @@ async function openRideDetails(rideId) {
 }
 
 
-function closeDetailsModal() { document.getElementById('detailsModal').classList.remove('active'); }
+function closeDetailsModal() {
+    document.getElementById('detailsModal').classList.remove('active');
+    if (detailsMap) { detailsMap.remove(); detailsMap = null; detailsRouteLayer = null; }
+}
+
 
 // ---------- Отзывы ----------
 
@@ -1315,11 +1529,23 @@ async function submitReview() {
 
 function openProfileModal() {
     if (!currentUser) return;
-    document.getElementById('profileName').textContent = (currentUser.firstName || '') + ' ' + (currentUser.lastName || '');
-    document.getElementById('profileUsername').textContent = currentUser.username ? '@' + currentUser.username : 'не указан';
-    document.getElementById('profileRating').textContent = currentUser.rating ? currentUser.rating.toFixed(1) : 'нет';
+    const fullName = ((currentUser.firstName || '') + ' ' + (currentUser.lastName || '')).trim();
+    document.getElementById('profileName').textContent = fullName || 'Без имени';
+    document.getElementById('profileUsername').textContent = currentUser.username ? '@' + currentUser.username : 'username не указан';
+
+    // Аватар — первая буква имени
+    const avatar = document.getElementById('profileAvatar');
+    avatar.textContent = (currentUser.firstName || '?').trim().charAt(0).toUpperCase();
+
+    // Рейтинг: звёзды + число; без оценок — прочерк
+    document.getElementById('profileStars').textContent = currentUser.rating
+        ? '⭐ ' + currentUser.rating.toFixed(1)
+        : '—';
+
     document.getElementById('profileTripCount').textContent = currentUser.tripCount || 0;
-    document.getElementById('profileRole').textContent = currentUser.role === 'PASSENGER' ? 'Пассажир' : (currentUser.role === 'DRIVER' ? 'Водитель' : 'не выбрана');
+    document.getElementById('profileRole').textContent = currentUser.role === 'PASSENGER' ? 'Пассажир'
+        : (currentUser.role === 'DRIVER' ? 'Водитель' : '—');
+
     const vehicleFields = document.getElementById('vehicleFields');
     if (currentUser.role === 'DRIVER') {
         vehicleFields.classList.remove('hidden');
@@ -1331,7 +1557,10 @@ function openProfileModal() {
         }
     } else vehicleFields.classList.add('hidden');
     document.getElementById('profileModal').classList.add('active');
+    loadPhoneStatus();
+
 }
+
 
 function closeProfileModal() { document.getElementById('profileModal').classList.remove('active'); }
 
@@ -1377,10 +1606,18 @@ function changeRoleFromProfile() { closeProfileModal(); document.getElementById(
         ensureTestPanel(savedId);
     }
     await registerUser();
+    const startParam = tg.initDataUnsafe?.start_param || '';
+    if (startParam.startsWith('ride_')) {
+        const sharedRideId = parseInt(startParam.slice(5));
+        if (sharedRideId) setTimeout(() => openRideDetails(sharedRideId), 800);
+    }
+
     startUnreadPolling();
     await loadMatchNotifications();   // сначала узнаём про отклики
     loadActiveRide();                  // потом рисуем карточку с бейджем
     startMatchNotifications();
+    setTimeout(initMainMap, 100);
+
 })();
 
 
@@ -1471,6 +1708,34 @@ async function openRideDetails(rideId) {
         </div>
     `;
 
+    // Мини-карта с маршрутом — инициализируем после показа модалки
+    setTimeout(() => {
+        const mapEl = document.getElementById('detailsMap');
+        if (!mapEl) return;
+        if (detailsMap) { detailsMap.remove(); detailsMap = null; }
+        detailsMap = L.map(mapEl, {
+            center: [(d.fromLat + d.toLat) / 2, (d.fromLon + d.toLon) / 2],
+            zoom: 8, attributionControl: true, zoomControl: true
+        });
+        detailsMap.attributionControl.setPrefix(false);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(detailsMap);
+        L.marker([d.fromLat, d.fromLon]).addTo(detailsMap);
+        L.marker([d.toLat, d.toLon]).addTo(detailsMap);
+        // Настоящая дорога с бэкенда; при неудаче — прямая линия между точками
+        fetch(`/api/rides/${d.id}/route`, { headers: { 'X-Telegram-Init-Data': tgInitData } })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(coords => {
+                if (!coords || coords.length < 2) throw new Error();
+                detailsRouteLayer = L.polyline(coords, { color: '#0088cc', weight: 4, opacity: 0.8 }).addTo(detailsMap);
+                detailsMap.fitBounds(detailsRouteLayer.getBounds().pad(0.15));
+            })
+            .catch(() => {
+                detailsRouteLayer = L.polyline([[d.fromLat, d.fromLon], [d.toLat, d.toLon]], { color: '#0088cc', weight: 3, dashArray: '6 6', opacity: 0.7 }).addTo(detailsMap);
+                detailsMap.fitBounds(detailsRouteLayer.getBounds().pad(0.3));
+            });
+    }, 150);
+
+
     reverseGeocodeShort(d.fromLat, d.fromLon).then(addr => {
         const el = document.getElementById('detailsFromAddr');
         if (el) el.textContent = addr;
@@ -1502,7 +1767,14 @@ async function openRideDetails(rideId) {
         respondBtn.textContent = 'Откликнуться';
         respondBtn.onclick = () => respondToRide(d.id, respondBtn, { role: d.role, availableSeats: d.availableSeats });
         actions.appendChild(respondBtn);
+
+        const shareBtn = document.createElement('button');
+        shareBtn.className = 'btn btn-sm btn-secondary';
+        shareBtn.textContent = '📤 Поделиться';
+        shareBtn.onclick = () => shareRide(d.id);
+        actions.appendChild(shareBtn);
     }
+
     document.getElementById('detailsModal').classList.add('active');
 }
 
@@ -1574,6 +1846,9 @@ async function drawMyRoute() {
 
 let altRouteLayers = [];
 let chosenRouteIndex = null;
+let detailsMap = null;
+let detailsRouteLayer = null;
+
 const ALT_COLORS = ['#1a73e8', '#f4511e', '#2e7d32'];
 
 async function showRouteAlternatives() {
@@ -1624,3 +1899,163 @@ function clearAltRoutes() {
 }
 
 
+function reportOutcome(matchId, outcome) {
+    const labels = {
+        COMPLETED: 'Поездка состоялась',
+        NO_SHOW_PASSENGER: 'Пассажир не пришёл',
+        NO_SHOW_DRIVER: 'Водитель не выехал'
+    };
+    if (!confirm(labels[outcome] + '?')) return;
+    fetch(`/api/matches/${matchId}/outcome?outcome=${outcome}`, {
+        method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData }
+    }).then(r => {
+        if (r.ok) showMessage('Зафиксировали. Второй стороне тоже нужно подтвердить исход.');
+        else r.text().then(t => showMessage(t.replace(/["{}]/g, ''), 'Ошибка'));
+        if (typeof currentRideId === 'number') loadResponsesForRide(currentRideId);
+        loadMyResponses();
+    });
+}
+
+function humanMatchStatus(s) {
+    const map = {
+        PENDING: 'Ожидает ответа', CONFIRMING: 'Ждёт подтверждения', CONFIRMED: 'Подтверждено',
+        COMPLETED: 'Состоялась', NO_SHOW_PASSENGER: 'Пассажир не пришёл',
+        NO_SHOW_DRIVER: 'Водитель не выехал', DISPUTED: 'Спор — на модерации', REJECTED: 'Отклонено'
+    };
+    return map[s] || s;
+}
+
+
+// ===== Телефон: подтверждение через бота =====
+
+async function loadPhoneStatus() {
+    const statusEl = document.getElementById('phoneStatus');
+    const formEl = document.getElementById('phoneForm');
+    if (!statusEl || !formEl) return;
+    try {
+        const r = await fetch('/api/phone/status', { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!r.ok) return;
+        const s = await r.json();
+        if (s.verified) {
+            statusEl.innerHTML = '📞 ' + escapeHtml(s.phone) + ' <span style="color:var(--passenger);font-weight:600;">✅ подтверждён</span>';
+            formEl.classList.add('hidden');
+        } else {
+            statusEl.textContent = '📞 Телефон не подтверждён — попутчику проще довериться, когда он есть';
+            formEl.classList.remove('hidden');
+            document.getElementById('codeRow').classList.add('hidden');
+        }
+    } catch (e) { /* статус телефона — не критично */ }
+}
+
+async function requestPhoneCode() {
+    const phone = document.getElementById('phoneInput').value.trim();
+    if (!phone) { showMessage('Введите номер телефона', 'Ошибка'); return; }
+    try {
+        const r = await fetch('/api/phone/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
+            body: JSON.stringify({ phone })
+        });
+        const body = await r.json().catch(() => ({}));
+        if (r.ok) {
+            document.getElementById('codeRow').classList.remove('hidden');
+            showMessage(body.message || 'Код отправлен вам в чат с ботом', 'Проверьте Telegram');
+        } else {
+            showMessage(body.message || 'Не удалось отправить код', 'Ошибка');
+        }
+    } catch (e) {
+        showMessage('Сервер недоступен, попробуйте позже', 'Ошибка');
+    }
+}
+
+async function verifyPhoneCode() {
+    const code = document.getElementById('phoneCodeInput').value.trim();
+    if (!code) { showMessage('Введите код из сообщения бота', 'Ошибка'); return; }
+    try {
+        const r = await fetch('/api/phone/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
+            body: JSON.stringify({ code })
+        });
+        const body = await r.json().catch(() => ({}));
+        if (r.ok) {
+            document.getElementById('phoneCodeInput').value = '';
+            await loadPhoneStatus();
+            showMessage('Телефон подтверждён! Ваш профиль стал надёжнее.', 'Готово');
+        } else {
+            showMessage(body.message || 'Неверный код', 'Ошибка');
+        }
+    } catch (e) {
+        showMessage('Сервер недоступен, попробуйте позже', 'Ошибка');
+    }
+}
+
+
+// ===== Поделиться поездкой =====
+
+function shareRide(rideId) {
+    const url = `https://t.me/${BOT_USERNAME}?startapp=ride_${rideId}`;
+    const text = `🚗 Еду через RideMate — присоединяйся! ${url}`;
+    if (navigator.share) {
+        navigator.share({ title: 'RideMate', text, url }).catch(() => copyShareLink(url));
+    } else {
+        copyShareLink(url);
+    }
+}
+
+function copyShareLink(url) {
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(url)
+            .then(() => showMessage('Ссылка скопирована — отправьте её в чат или переслать', 'Поделиться'))
+            .catch(() => showMessage('Ссылка: ' + url, 'Поделиться'));
+    } else {
+        showMessage('Ссылка: ' + url, 'Поделиться');
+    }
+}
+
+// ===== Обратная связь =====
+const TOPIC_LABELS = { PROBLEM: '🐛 Проблема', IDEA: '💡 Идея', QUESTION: '❓ Вопрос' };
+
+
+function openSupportModal() {
+    document.getElementById('supportTopic').value = 'PROBLEM';
+    document.getElementById('supportMessage').value = '';
+    document.getElementById('supportModal').classList.add('active');
+    loadMySupport();
+}
+
+function closeSupportModal() { document.getElementById('supportModal').classList.remove('active'); }
+
+async function sendSupport() {
+    const message = document.getElementById('supportMessage').value.trim();
+    if (!message) { showMessage('Напишите текст обращения', 'Ошибка'); return; }
+    const r = await fetch('/api/support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
+        body: JSON.stringify({ topic: document.getElementById('supportTopic').value, message })
+    });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok && body.ok) {
+        document.getElementById('supportMessage').value = '';
+        showMessage('Отправлено! Мы обязательно прочтём.', 'Спасибо');
+        loadMySupport();
+    } else {
+        showMessage(body.message || 'Не удалось отправить', 'Ошибка');
+    }
+}
+
+async function loadMySupport() {
+    const r = await fetch('/api/support/my', { headers: { 'X-Telegram-Init-Data': tgInitData } });
+    if (!r.ok) return;
+    const items = await r.json();
+    const box = document.getElementById('supportMyList');
+    box.innerHTML = items.length === 0
+        ? '<div style="font-size:13px;color:var(--text-secondary);">Ваших обращений пока нет</div>'
+        : '<div style="font-weight:600;font-size:13px;">Ваши обращения:</div>';
+    items.forEach(i => {
+        const div = document.createElement('div');
+        div.style.cssText = 'font-size:13px;padding:6px 0;border-top:1px solid var(--border);';
+        div.innerHTML = `${TOPIC_LABELS?.[i.topic] || i.topic} · ${i.status === 'NEW' ? '🟡 новый' : '✅ решён'}<br>${escapeHtml(i.message).slice(0, 120)}`;
+        box.appendChild(div);
+    });
+}

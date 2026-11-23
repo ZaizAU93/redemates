@@ -42,6 +42,12 @@ public class MatchService {
     public MatchResponseDTO respondToRideRequest(Long rideRequestId, Long responderTelegramId, Integer seatsRequested) {
         User responder = userRepository.findByTelegramId(responderTelegramId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        if (responder.getStatus() == UserStatus.BANNED) {
+            throw new RuntimeException("Аккаунт заблокирован");
+        }
+
+
         RideRequest rideRequest = rideRequestRepository.findById(rideRequestId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -228,6 +234,124 @@ public class MatchService {
         }
     }
 
+    // ---------- Исход поездки: отчёты сторон, no-show, споры ----------
+
+    @Transactional
+    public MatchStatus reportOutcome(Long matchId, Long telegramId, OutcomeReport outcome) {
+        Match match = matchRepository.findById(matchId)
+                .orElseThrow(() -> new RuntimeException("Бронь не найдена"));
+        RideRequest ride = match.getRideRequest();
+
+        boolean isOwner = ride.getUser().getTelegramId().equals(telegramId);
+        boolean isResponder = match.getResponder().getTelegramId().equals(telegramId);
+        if (!isOwner && !isResponder) {
+            throw new RuntimeException("Вы не участник этой брони");
+        }
+        if (match.getStatus() != MatchStatus.CONFIRMED) {
+            throw new RuntimeException("Отчитываться можно только по подтверждённой брони");
+        }
+        if (ride.getDepartureTime() != null && ride.getDepartureTime().isAfter(LocalDateTime.now())) {
+            throw new RuntimeException("Отчитаться можно после времени выезда");
+        }
+
+        boolean iAmDriver = (ride.getRole() == Role.DRIVER) == isOwner;
+        if (iAmDriver) match.setDriverOutcome(outcome);
+        else match.setPassengerOutcome(outcome);
+        matchRepository.save(match);
+
+        // Ждём отчёт второй стороны — уведомляем именно её
+        if (match.getDriverOutcome() == null || match.getPassengerOutcome() == null) {
+            User otherUser = isOwner ? match.getResponder() : ride.getUser();
+            notify(otherUser, "⏱ Вторая сторона отчиталась о поездке. Подтвердите исход в приложении: «Заявки».");
+            return match.getStatus();
+        }
+
+        // Оба отчёта получены — сравниваем и закрываем
+        User owner = ride.getUser();
+        User responder = match.getResponder();
+        boolean ownerIsDriver = ride.getRole() == Role.DRIVER;
+        User driver = ownerIsDriver ? owner : responder;
+        User passenger = ownerIsDriver ? responder : owner;
+
+        if (match.getDriverOutcome() == match.getPassengerOutcome()) {
+            if (match.getDriverOutcome() == OutcomeReport.COMPLETED) {
+                match.setStatus(MatchStatus.COMPLETED);
+                driver.setTripCount((driver.getTripCount() != null ? driver.getTripCount() : 0) + 1);
+                passenger.setTripCount((passenger.getTripCount() != null ? passenger.getTripCount() : 0) + 1);
+                userRepository.save(driver);
+                userRepository.save(passenger);
+                ride.setStatus(RideStatus.COMPLETED);
+                rideRequestRepository.save(ride);
+                notify(owner, "🎉 Поездка состоялась! Не забудьте оставить отзыв.");
+                notify(responder, "🎉 Поездка состоялась! Не забудьте оставить отзыв.");
+            } else {
+                User guilty = match.getDriverOutcome() == OutcomeReport.NO_SHOW_PASSENGER ? passenger : driver;
+                guilty.setNoShowCount((guilty.getNoShowCount() != null ? guilty.getNoShowCount() : 0) + 1);
+                userRepository.save(guilty);
+                match.setStatus(match.getDriverOutcome() == OutcomeReport.NO_SHOW_PASSENGER
+                        ? MatchStatus.NO_SHOW_PASSENGER
+                        : MatchStatus.NO_SHOW_DRIVER);
+                releaseSeatsAndRide(match);
+                notify(owner, "⚠️ Поездка зафиксирована как несостоявшаяся. Места вернулись в пул.");
+                notify(responder, "⚠️ Поездка зафиксирована как несостоявшаяся. Места вернулись в пул.");
+            }
+        } else {
+            match.setStatus(MatchStatus.DISPUTED);
+            notify(owner, "⚖️ Показания о поездке разошлись — вопрос передан на модерацию.");
+            notify(responder, "⚖️ Показания о поездке разошлись — вопрос передан на модерацию.");
+        }
+        matchRepository.save(match);
+        return match.getStatus();
+    }
+
+    /** Виноватый объявлен: места возвращаются в пул, заявка снова активна. */
+    private void releaseSeatsAndRide(Match match) {
+        RideRequest ride = match.getRideRequest();
+        if (ride.getRole() == Role.DRIVER) {
+            rideRequestRepository.incrementSeats(ride.getId(), match.getSeats());
+        }
+        if (match.getId().equals(ride.getAcceptedMatchId())) {
+            ride.setAcceptedMatchId(null);
+            ride.setStatus(RideStatus.ACTIVE);
+            rideRequestRepository.save(ride);
+        }
+    }
+
+
+    /** Решение модератора по спорному матчу: DRIVER = прав водитель, PASSENGER = прав пассажир, VOID = без штрафа. */
+    @Transactional
+    public void resolveDispute(Long matchId, String decision) {
+        Match match = matchRepository.findById(matchId)
+                .orElseThrow(() -> new RuntimeException("Матч не найден"));
+        if (match.getStatus() != MatchStatus.DISPUTED) {
+            throw new RuntimeException("Этот матч не в статусе спора");
+        }
+        RideRequest ride = match.getRideRequest();
+        User owner = ride.getUser();
+        User responder = match.getResponder();
+        boolean ownerIsDriver = ride.getRole() == Role.DRIVER;
+        User driver = ownerIsDriver ? owner : responder;
+        User passenger = ownerIsDriver ? responder : owner;
+
+        switch (decision) {
+            case "DRIVER" -> {
+                passenger.setNoShowCount((passenger.getNoShowCount() != null ? passenger.getNoShowCount() : 0) + 1);
+                userRepository.save(passenger);
+                match.setStatus(MatchStatus.NO_SHOW_PASSENGER);
+            }
+            case "PASSENGER" -> {
+                driver.setNoShowCount((driver.getNoShowCount() != null ? driver.getNoShowCount() : 0) + 1);
+                userRepository.save(driver);
+                match.setStatus(MatchStatus.NO_SHOW_DRIVER);
+            }
+            default -> match.setStatus(MatchStatus.REJECTED);
+        }
+        releaseSeatsAndRide(match);
+        matchRepository.save(match);
+        notify(owner, "⚖️ Модератор разобрал спор по вашей поездке. Итог: " + match.getStatus().name());
+        notify(responder, "⚖️ Модератор разобрал спор по вашей поездке. Итог: " + match.getStatus().name());
+    }
+
     // ---------- Дедлайн подтверждения ----------
 
     @Scheduled(fixedRate = 60_000)
@@ -255,12 +379,57 @@ public class MatchService {
         }
     }
 
+    // ---------- Авто-финализация исходов ----------
+
+    /** Одна сторона отчиталась, вторая молчит 24 часа после выезда — закрываем по отчёту первой.
+     *  Для теста: fixedRate = 60_000 и дедлайн minusMinutes(2). */
+    @Scheduled(fixedRate = 3600_000)
+    @Transactional
+    public void finalizeStaleOutcomes() {
+        List<Match> stale = matchRepository.findStaleOutcomes(LocalDateTime.now().minusHours(24));
+        for (Match match : stale) {
+            finalizeSingleReport(match);
+        }
+    }
+
+    private void finalizeSingleReport(Match match) {
+        RideRequest ride = match.getRideRequest();
+        User owner = ride.getUser();
+        User responder = match.getResponder();
+        boolean ownerIsDriver = ride.getRole() == Role.DRIVER;
+
+        // Берём отчёт той стороны, которая есть; вторую считаем подтвердившей её
+        OutcomeReport report = match.getDriverOutcome() != null ? match.getDriverOutcome() : match.getPassengerOutcome();
+        match.setDriverOutcome(report);
+        match.setPassengerOutcome(report);
+
+        if (report == OutcomeReport.COMPLETED) {
+            match.setStatus(MatchStatus.COMPLETED);
+            User driver = ownerIsDriver ? owner : responder;
+            User passenger = ownerIsDriver ? responder : owner;
+            driver.setTripCount((driver.getTripCount() != null ? driver.getTripCount() : 0) + 1);
+            passenger.setTripCount((passenger.getTripCount() != null ? passenger.getTripCount() : 0) + 1);
+            userRepository.save(driver);
+            userRepository.save(passenger);
+        } else {
+            User guilty = report == OutcomeReport.NO_SHOW_PASSENGER
+                    ? (ownerIsDriver ? responder : owner)
+                    : (ownerIsDriver ? owner : responder);
+            guilty.setNoShowCount((guilty.getNoShowCount() != null ? guilty.getNoShowCount() : 0) + 1);
+            userRepository.save(guilty);
+            match.setStatus(report == OutcomeReport.NO_SHOW_PASSENGER
+                    ? MatchStatus.NO_SHOW_PASSENGER
+                    : MatchStatus.NO_SHOW_DRIVER);
+            releaseSeatsAndRide(match);
+        }
+
+        matchRepository.save(match);
+        notify(owner, "Исход поездки зафиксирован автоматически: " + match.getStatus().name());
+        notify(responder, "Исход поездки зафиксирован автоматически: " + match.getStatus().name());
+    }
+
     // ---------- Уведомления об откликах ----------
 
-    /**
-     * Id заявок, на которые пользователь уже откликнулся (и отклик ещё жив).
-     * Фронт по нему гасит кнопку «Откликнуться» на этих карточках.
-     */
     @Transactional(readOnly = true)
     public List<Long> getMyRespondedRideRequestIds(Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
@@ -274,10 +443,6 @@ public class MatchService {
                 .toList();
     }
 
-    /**
-     * Сколько живых откликов (PENDING) сейчас на заявки пользователя.
-     * Фронт по изменению этого числа показывает «🔔 Новый отклик».
-     */
     @Transactional(readOnly = true)
     public long getOwnerPendingResponseCount(Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
@@ -287,13 +452,20 @@ public class MatchService {
                 .count();
     }
 
-    // ---------- Вспомогательное ----------
-
-    private void notify(User user, String text) {
-        if (user != null && user.getChatId() != null) {
-            telegramBotService.sendMessage(user.getChatId(), text);
-        }
+    @Transactional(readOnly = true)
+    public long getConfirmingBookingCount(Long telegramId) {
+        User user = userRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        long asResponder = matchRepository.findByResponderId(user.getId()).stream()
+                .filter(m -> m.getStatus() == MatchStatus.CONFIRMING)
+                .count();
+        long asOwner = matchRepository.findByRideRequestUserId(user.getId()).stream()
+                .filter(m -> m.getStatus() == MatchStatus.CONFIRMING)
+                .count();
+        return asResponder + asOwner;
     }
+
+    // ---------- DTO ----------
 
     public List<MatchDTO> getMyResponses(Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
@@ -342,22 +514,11 @@ public class MatchService {
         );
     }
 
-    /**
-     * Сколько броней сейчас в статусе CONFIRMING, где пользователь — участник
-     * (откликнулся или владелец заявки). Фронт по увеличению показывает
-     * «Вашу бронь приняли — подтвердите».
-     */
-    @Transactional(readOnly = true)
-    public long getConfirmingBookingCount(Long telegramId) {
-        User user = userRepository.findByTelegramId(telegramId)
-                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
-        long asResponder = matchRepository.findByResponderId(user.getId()).stream()
-                .filter(m -> m.getStatus() == MatchStatus.CONFIRMING)
-                .count();
-        long asOwner = matchRepository.findByRideRequestUserId(user.getId()).stream()
-                .filter(m -> m.getStatus() == MatchStatus.CONFIRMING)
-                .count();
-        return asResponder + asOwner;
-    }
+    // ---------- Вспомогательное ----------
 
+    private void notify(User user, String text) {
+        if (user != null && user.getChatId() != null) {
+            telegramBotService.sendMessage(user.getChatId(), text);
+        }
+    }
 }

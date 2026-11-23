@@ -171,4 +171,7 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
             @Param("limit") int limit
     );
 
+    long countByStatus(RideStatus status);
+
+
 }

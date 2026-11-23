@@ -14,4 +14,13 @@ public interface MatchRepository extends JpaRepository<Match, Long> {
     List<Match> findByRideRequestUserId(Long userId);
     List<Match> findByRideRequestIdAndStatus(Long rideRequestId, MatchStatus status);
     List<Match> findByStatusAndExpiresAtBefore(MatchStatus status, LocalDateTime time);
+
+    @org.springframework.data.jpa.repository.Query(
+            "select m from Match m where m.status = 'CONFIRMED' " +
+                    "and (m.driverOutcome is not null or m.passengerOutcome is not null) " +
+                    "and m.rideRequest.departureTime < :deadline")
+    List<Match> findStaleOutcomes(@org.springframework.data.repository.query.Param("deadline") LocalDateTime deadline);
+
+    List<Match> findByStatus(MatchStatus status);
+
 }

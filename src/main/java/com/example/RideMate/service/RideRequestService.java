@@ -42,7 +42,6 @@ public class RideRequestService {
     private final RouteSubscriptionRepository routeSubscriptionRepository;
 
     /** Доступ к RouteService для эндпоинта предпросмотра альтернатив. */
-    /** Доступ к RouteService для эндпоинта предпросмотра альтернатив. */
     public RouteService getRouteService() {
         return routeService;
     }
@@ -51,6 +50,15 @@ public class RideRequestService {
     public RideRequestResponseDTO createRequest(RideRequestCreateRequest request, Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        if (user.getStatus() == UserStatus.BANNED) {
+            throw new RuntimeException("Аккаунт заблокирован");
+        }
+        if (user.getStatus() == UserStatus.RESTRICTED) {
+            throw new RuntimeException("Аккаунт ограничен: дождитесь проверки модератором");
+        }
+
+
 
         // Проверка: есть ли активная заявка у этого пользователя
         Optional<RideRequest> activeRequest = rideRequestRepository
@@ -325,9 +333,13 @@ public class RideRequestService {
         }
 
         // Фильтр: не предлагаем пользователю его собственные заявки
+        // Фильтр: не свои заявки + только пользователи без ограничений
         requests = requests.stream()
                 .filter(r -> !r.getUser().getTelegramId().equals(viewerTelegramId))
+                .filter(r -> r.getUser().getStatus() == null
+                        || r.getUser().getStatus() == UserStatus.ACTIVE)
                 .toList();
+
 
         List<RideRequest> filtered = requests.stream()
                 .filter(r -> r.getDepartureTime() == null || departureTime == null ||
