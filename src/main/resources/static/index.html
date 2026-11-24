@@ -232,7 +232,17 @@
         .profile-stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
         .profile-section-title { font-size: 15px; font-weight: 600; margin: 4px 0 10px; }
         #vehicleFields input { margin-bottom: 0; }
-
+        /* Стили для полноэкранного чата */
+        .app-container.chat-open {
+            padding-bottom: 0 !important;
+        }
+        .app-container.chat-open .bottom-nav {
+            display: none !important;
+        }
+        .app-container.chat-open #chatMessages {
+            max-height: calc(100vh - 160px) !important;
+            height: calc(100vh - 160px);
+        }
     </style>
 </head>
 <body>

@@ -27,27 +27,27 @@ public class ReminderService {
     }
 
     // Запускается каждые 5 минут
-    @Scheduled(fixedRate = 300000) // каждые 5 минут
-    @Transactional(readOnly = true)
+    @Scheduled(fixedRate = 300000)
+    @Transactional // ← Убрали readOnly = true, теперь база будет обновляться!
     public void sendReminders() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime threshold = now.plusHours(1);
 
-        List<RideRequest> upcomingRides = rideRequestRepository.findAll().stream()
-                .filter(r -> r.getDepartureTime() != null)
-                .filter(r -> r.getStatus() == RideStatus.MATCHED || r.getStatus() == RideStatus.ACTIVE)
-                .filter(r -> r.getDepartureTime().isAfter(now) && r.getDepartureTime().isBefore(threshold))
-                .toList();
+        // Ищем только подходящие заявки, не грузим всю базу
+        List<RideRequest> upcomingRides = rideRequestRepository
+                .findByStatusInAndDepartureTimeBetweenAndReminderSentFalse(
+                        List.of(RideStatus.MATCHED, RideStatus.ACTIVE),
+                        now,
+                        threshold
+                );
 
         for (RideRequest ride : upcomingRides) {
-            if (!Boolean.TRUE.equals(ride.getReminderSent())) {
-                sendReminderToOwner(ride);
-                if (ride.getAcceptedMatchId() != null) {
-                    sendReminderToResponder(ride);
-                }
-                ride.setReminderSent(true);
-                rideRequestRepository.save(ride);
+            sendReminderToOwner(ride);
+            if (ride.getAcceptedMatchId() != null) {
+                sendReminderToResponder(ride);
             }
+            ride.setReminderSent(true);
+            rideRequestRepository.save(ride); // Теперь это сработает
         }
     }
 

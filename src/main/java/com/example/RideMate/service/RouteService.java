@@ -13,6 +13,7 @@ import org.springframework.web.client.RestTemplate;
 import java.util.ArrayList;
 import java.util.List;
 
+
 @Service
 public class RouteService {
 
@@ -76,6 +77,16 @@ public class RouteService {
      * Если OSRM недоступен или вариантов нет — один прямой маршрут через заданные точки.
      */
     public List<LineString> buildRouteAlternatives(Point from, List<double[]> waypoints, Point to) {
+
+        // АВТОСОРТИРОВКА: сортируем промежуточные точки по удаленности от старта
+        if (waypoints != null && waypoints.size() > 1) {
+            waypoints.sort((w1, w2) -> {
+                double d1 = distance(from.getY(), from.getX(), w1[0], w1[1]);
+                double d2 = distance(from.getY(), from.getX(), w2[0], w2[1]);
+                return Double.compare(d1, d2);
+            });
+        }
+
         List<double[]> points = new ArrayList<>();
         points.add(new double[]{from.getY(), from.getX()}); // [lat, lon]
         if (waypoints != null) points.addAll(waypoints);
@@ -113,4 +124,16 @@ public class RouteService {
         }
     }
 
+
+    // Формула гаверсинуса для расчета расстояния в километрах
+    private double distance(double lat1, double lon1, double lat2, double lon2) {
+        double earthRadius = 6371; // км
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadius * c;
+    }
 }

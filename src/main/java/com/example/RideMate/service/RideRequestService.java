@@ -7,10 +7,7 @@ import com.example.RideMate.dto.RideRequestMatchDTO;
 import com.example.RideMate.dto.RideRequestResponseDTO;
 import com.example.RideMate.dto.RoutePointDTO;
 import com.example.RideMate.entity.*;
-import com.example.RideMate.repository.MatchRepository;
-import com.example.RideMate.repository.RideRequestRepository;
-import com.example.RideMate.repository.RouteSubscriptionRepository;
-import com.example.RideMate.repository.UserRepository;
+import com.example.RideMate.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -40,6 +37,7 @@ public class RideRequestService {
     private final RouteService routeService;
 
     private final RouteSubscriptionRepository routeSubscriptionRepository;
+    private final ReviewRepository reviewRepository;
 
     /** Доступ к RouteService для эндпоинта предпросмотра альтернатив. */
     public RouteService getRouteService() {
@@ -98,7 +96,7 @@ public class RideRequestService {
             }
         }
 
-        return toDTO(saved);
+        return toDTO(saved, user);
     }
 
     /**
@@ -125,7 +123,7 @@ public class RideRequestService {
         if (request.role() == Role.DRIVER) {
             notifySubscribers(saved, user);
         }
-        return toDTO(saved);
+        return toDTO(saved, user);
     }
 
     /** Общая логика заполнения заявки для создания и редактирования. */
@@ -151,6 +149,24 @@ public class RideRequestService {
         // Маршрут строится у водителя всегда, даже без промежуточных точек.
         // Маршрут: если водитель выбрал вариант из предложенных — берём его,
         // иначе первый (основной) вариант из OSRM.
+
+        // Строим маршрут для всех ролей (и водителей, и пассажиров)
+        List<double[]> wp = new ArrayList<>();
+        if (request.waypoints() != null) {
+            for (RoutePointDTO w : request.waypoints()) {
+                wp.add(new double[]{w.lat(), w.lon()});
+            }
+        }
+        List<LineString> alternatives = routeService.buildRouteAlternatives(from, wp, to);
+        LineString chosen = alternatives.get(0);
+        if (request.routeIndex() != null
+                && request.routeIndex() >= 0
+                && request.routeIndex() < alternatives.size()) {
+            chosen = alternatives.get(request.routeIndex());
+        }
+        rideRequest.setRoute(chosen);
+
+        /*
         if (request.role() == Role.DRIVER) {
             List<double[]> wp = new ArrayList<>();
             if (request.waypoints() != null) {
@@ -169,7 +185,7 @@ public class RideRequestService {
         } else {
             rideRequest.setRoute(null);
         }
-
+       */ //Маршрут
 
         if (request.role() == Role.DRIVER && request.pricePerSeat() != null) {
             if (request.pricePerSeat().compareTo(java.math.BigDecimal.ZERO) < 0) {
@@ -220,12 +236,23 @@ public class RideRequestService {
 
         List<RideRequest> requests;
         if (status != null) {
-            requests = rideRequestRepository.findByUserIdAndStatus(user.getId(), status);
+            if (status == RideStatus.ACTIVE) {
+                // Если фронтенд просит "активные", мы отдаем и те, где ищем попутчиков, и те, где уже есть бронь
+                requests = rideRequestRepository.findByUserIdAndStatusIn(
+                        user.getId(),
+                        List.of(RideStatus.ACTIVE, RideStatus.MATCHED)
+                );
+            } else {
+                // Если запрашивают конкретный статус (например, COMPLETED), ищем строго по нему
+                requests = rideRequestRepository.findByUserIdAndStatus(user.getId(), status);
+            }
         } else {
+            // Если статус не передан — отдаем вообще всё (для кнопки "Показать все")
             requests = rideRequestRepository.findByUserId(user.getId());
         }
+
         return requests.stream()
-                .map(this::toRideRequestDTO)
+                .map(r -> toRideRequestDTO(r, user))
                 .toList();
     }
 
@@ -366,7 +393,7 @@ public class RideRequestService {
         }
     }
 
-    private RideRequestResponseDTO toDTO(RideRequest rideRequest) {
+    private RideRequestResponseDTO toDTO(RideRequest rideRequest, User user) {
         return new RideRequestResponseDTO(
                 rideRequest.getId(),
                 rideRequest.getRole().name(),
@@ -488,7 +515,8 @@ public class RideRequestService {
         return earthRadius * c;
     }
 
-    private RideRequestDTO toRideRequestDTO(RideRequest r) {
+    private RideRequestDTO toRideRequestDTO(RideRequest r, User user) {
+        boolean hasReviewed = reviewRepository.existsByRideRequestIdAndReviewerId(r.getId(), user.getId());
         return new RideRequestDTO(
                 r.getId(),
                 r.getRole().name(),
@@ -504,7 +532,8 @@ public class RideRequestService {
                 r.getStatus().name(),
                 r.getCreatedAt(),
                 r.getAcceptedMatchId(),
-                r.getPricePerSeat()
+                r.getPricePerSeat(),
+                hasReviewed
         );
     }
 
@@ -545,6 +574,8 @@ public class RideRequestService {
         }
     }
 
+
+    /* Время гибкости
     @Scheduled(fixedRate = 60000)
     @Transactional
     public void expireOldRequests() {
@@ -554,6 +585,28 @@ public class RideRequestService {
             rideRequestRepository.save(r);
         }
     }
+    */
+
+    @Scheduled(fixedRate = 60000)
+    @Transactional
+    public void expireOldRequests() {
+        LocalDateTime now = LocalDateTime.now();
+        // Берем все ACTIVE заявки, время выезда которых уже наступило
+        List<RideRequest> pastRequests = rideRequestRepository.findByStatusAndDepartureTimeBefore(RideStatus.ACTIVE, now);
+
+        for (RideRequest r : pastRequests) {
+            // Учитываем гибкость (если она null, берем 30 мин по умолчанию)
+            int flex = r.getTimeFlexibilityMinutes() != null ? r.getTimeFlexibilityMinutes() : 30;
+            LocalDateTime expireTime = r.getDepartureTime().plusMinutes(flex);
+
+            // Заявка истекает только если время + гибкость прошли
+            if (expireTime.isBefore(now)) {
+                r.setStatus(RideStatus.EXPIRED);
+                rideRequestRepository.save(r);
+            }
+        }
+    }
+
 
     /** Координаты сохранённого маршрута для отрисовки на карте: [[lat, lon], ...]. */
     @Transactional(readOnly = true)

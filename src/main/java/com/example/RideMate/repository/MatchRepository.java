@@ -23,4 +23,7 @@ public interface MatchRepository extends JpaRepository<Match, Long> {
 
     List<Match> findByStatus(MatchStatus status);
 
+
+    List<Match> findByStatusInAndRideRequestDepartureTimeBefore(
+            List<MatchStatus> statuses, LocalDateTime time);
 }

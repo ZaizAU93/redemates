@@ -129,17 +129,15 @@ public class MessageService {
         User me = userRepository.findByTelegramId(telegramId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
-        // Все матчи, где я — владелец заявки или откликнувшийся
-        Set<Long> seenIds = new HashSet<>();
-        List<Match> matches = new ArrayList<>();
+        Set<Long> seenMatchIds = new HashSet<>();
+        List<Match> allMatches = new ArrayList<>();
         for (Match m : matchRepository.findByRideRequestUserId(me.getId())) {
-            if (CHAT_ALLOWED.contains(m.getStatus()) && seenIds.add(m.getId())) matches.add(m);
+            if (CHAT_ALLOWED.contains(m.getStatus()) && seenMatchIds.add(m.getId())) allMatches.add(m);
         }
         for (Match m : matchRepository.findByResponderId(me.getId())) {
-            if (CHAT_ALLOWED.contains(m.getStatus()) && seenIds.add(m.getId())) matches.add(m);
+            if (CHAT_ALLOWED.contains(m.getStatus()) && seenMatchIds.add(m.getId())) allMatches.add(m);
         }
 
-        // Последние сообщения и счётчики непрочитанных — одним запросом каждый
         Map<Long, Message> lastByMatch = new HashMap<>();
         for (Message m : messageRepository.findLastMessagesForUser(me.getId())) {
             lastByMatch.put(m.getMatch().getId(), m);
@@ -149,14 +147,16 @@ public class MessageService {
             unreadByMatch.put((Long) row[0], (Long) row[1]);
         }
 
-        List<ChatDTO> chats = new ArrayList<>();
-        for (Match m : matches) {
+        // Используем Map для дедупликации по ID собеседника
+        Map<Long, ChatDTO> uniqueChats = new LinkedHashMap<>();
+
+        for (Match m : allMatches) {
             RideRequest ride = m.getRideRequest();
             boolean iAmOwner = ride.getUser().getId().equals(me.getId());
             User peer = iAmOwner ? m.getResponder() : ride.getUser();
 
             Message last = lastByMatch.get(m.getId());
-            chats.add(new ChatDTO(
+            ChatDTO chat = new ChatDTO(
                     m.getId(),
                     ride.getId(),
                     peer.getFirstName() != null && !peer.getFirstName().isBlank() ? peer.getFirstName() : "Пользователь",
@@ -166,9 +166,23 @@ public class MessageService {
                     last != null ? last.getCreatedAt() : null,
                     unreadByMatch.getOrDefault(m.getId(), 0L),
                     m.getStatus().name()
-            ));
+            );
+
+            Long peerId = peer.getId();
+            if (!uniqueChats.containsKey(peerId)) {
+                uniqueChats.put(peerId, chat);
+            } else {
+                // Если чат уже есть, оставляем тот, где есть последнее сообщение (или более новое)
+                ChatDTO existing = uniqueChats.get(peerId);
+                if (chat.lastMessageTime() != null) {
+                    if (existing.lastMessageTime() == null || chat.lastMessageTime().isAfter(existing.lastMessageTime())) {
+                        uniqueChats.put(peerId, chat);
+                    }
+                }
+            }
         }
 
+        List<ChatDTO> chats = new ArrayList<>(uniqueChats.values());
         chats.sort(Comparator.comparing(ChatDTO::lastMessageTime,
                 Comparator.nullsLast(Comparator.reverseOrder())));
         return chats;

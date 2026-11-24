@@ -173,5 +173,11 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
 
     long countByStatus(RideStatus status);
 
+    List<RideRequest> findByStatusInAndDepartureTimeBetweenAndReminderSentFalse(
+            List<RideStatus> statuses,
+            LocalDateTime start,
+            LocalDateTime end
+    );
 
+    List<RideRequest> findByUserIdAndStatusIn(Long userId, List<RideStatus> statuses);
 }

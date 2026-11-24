@@ -17,7 +17,8 @@ public record RideRequestDTO(
         String status,
         LocalDateTime createdAt,
         Long acceptedMatchId,
-        java.math.BigDecimal pricePerSeat   // только для водителя, может быть null
+        java.math.BigDecimal pricePerSeat,  // только для водителя, может быть null
+        Boolean hasReviewed
 
 ) {
 }

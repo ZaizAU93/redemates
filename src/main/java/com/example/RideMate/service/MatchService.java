@@ -4,6 +4,7 @@ import com.example.RideMate.dto.MatchDTO;
 import com.example.RideMate.dto.MatchResponseDTO;
 import com.example.RideMate.entity.*;
 import com.example.RideMate.repository.MatchRepository;
+import com.example.RideMate.repository.ReviewRepository;
 import com.example.RideMate.repository.RideRequestRepository;
 import com.example.RideMate.repository.UserRepository;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,16 +25,20 @@ public class MatchService {
     private final TelegramBotService telegramBotService;
     private final SafetyService safetyService;
 
+    private final ReviewRepository reviewRepository;
+
     public MatchService(MatchRepository matchRepository,
                         RideRequestRepository rideRequestRepository,
                         UserRepository userRepository,
                         TelegramBotService telegramBotService,
-                        SafetyService safetyService) {
+                        SafetyService safetyService,
+                        ReviewRepository reviewRepository) {
         this.matchRepository = matchRepository;
         this.rideRequestRepository = rideRequestRepository;
         this.userRepository = userRepository;
         this.telegramBotService = telegramBotService;
         this.safetyService = safetyService;
+        this.reviewRepository = reviewRepository;
     }
 
     // ---------- Запрос брони ----------
@@ -472,7 +477,7 @@ public class MatchService {
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
         return matchRepository.findByResponderId(user.getId())
                 .stream()
-                .map(match -> toMatchDTO(match, false))
+                .map(match -> toMatchDTO(match, false, user))
                 .toList();
     }
 
@@ -482,35 +487,59 @@ public class MatchService {
         if (!rideRequest.getUser().getTelegramId().equals(ownerTelegramId)) {
             throw new RuntimeException("Вы не владелец этой заявки");
         }
+
+        // 1. Достаем текущего пользователя из базы (того, кто смотрит отклики)
+        User user = userRepository.findByTelegramId(ownerTelegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        // 2. Передаем его в маппер
         return matchRepository.findByRideRequestId(rideRequestId)
                 .stream()
-                .map(match -> toMatchDTO(match, true))
+                .map(match -> toMatchDTO(match, true, user))
                 .toList();
     }
 
-    private MatchDTO toMatchDTO(Match match, boolean forOwner) {
-        String contactUsername;
-        Long responderTelegramId = match.getResponder().getTelegramId();
-        if (forOwner) {
-            User responder = match.getResponder();
-            contactUsername = (responder.getUsername() != null && !responder.getUsername().isEmpty())
-                    ? responder.getUsername()
-                    : String.valueOf(responder.getTelegramId());
-        } else {
-            User owner = match.getRideRequest().getUser();
-            contactUsername = (owner.getUsername() != null && !owner.getUsername().isEmpty())
-                    ? owner.getUsername()
-                    : String.valueOf(owner.getTelegramId());
-        }
+    private MatchDTO toMatchDTO(Match match, boolean forOwner, User currentUser) {
+        User owner = match.getRideRequest().getUser();
+        User responder = match.getResponder();
+        RideRequest ride = match.getRideRequest();
+
+        String contactUsername = forOwner
+                ? (responder.getUsername() != null && !responder.getUsername().isEmpty() ? responder.getUsername() : String.valueOf(responder.getTelegramId()))
+                : (owner.getUsername() != null && !owner.getUsername().isEmpty() ? owner.getUsername() : String.valueOf(owner.getTelegramId()));
+
+        String ownerName = (owner.getFirstName() != null ? owner.getFirstName() : "Пользователь") + (owner.getLastName() != null ? " " + owner.getLastName() : "");
+        String responderName = (responder.getFirstName() != null ? responder.getFirstName() : "Пользователь") + (responder.getLastName() != null ? " " + responder.getLastName() : "");
+
+        boolean hasReviewed = reviewRepository.existsByRideRequestIdAndReviewerId(
+                match.getRideRequest().getId(), currentUser.getId()
+        );
+
         return new MatchDTO(
                 match.getId(),
-                match.getRideRequest().getId(),
-                match.getResponder().getFirstName() + " " +
-                        (match.getResponder().getLastName() != null ? match.getResponder().getLastName() : ""),
+                ride.getId(),
+
+                responderName,
+                responder.getTelegramId(),
+                responder.getRating(),
+                responder.getTripCount(),
+
+                ownerName,
+                owner.getTelegramId(),
+                owner.getRating(),
+                owner.getTripCount(),
+
+                ride.getFromLocation().getY(), ride.getFromLocation().getX(),
+                ride.getToLocation().getY(), ride.getToLocation().getX(),
+                ride.getDepartureTime(),
+                ride.getPricePerSeat(),
+                ride.getNote(),
+
+                match.getSeats(),
                 match.getStatus().name(),
                 match.getCreatedAt(),
                 contactUsername,
-                responderTelegramId
+                hasReviewed
         );
     }
 
@@ -519,6 +548,36 @@ public class MatchService {
     private void notify(User user, String text) {
         if (user != null && user.getChatId() != null) {
             telegramBotService.sendMessage(user.getChatId(), text);
+        }
+    }
+
+
+    @Scheduled(fixedRate = 60_000)
+    @Transactional
+    public void expirePastMatches() {
+        LocalDateTime now = LocalDateTime.now();
+        // Ищем PENDING и CONFIRMING матчи (берем с запасом по времени)
+        List<Match> pendingMatches = matchRepository.findByStatusInAndRideRequestDepartureTimeBefore(
+                List.of(MatchStatus.PENDING, MatchStatus.CONFIRMING), now);
+
+        for (Match match : pendingMatches) {
+            RideRequest ride = match.getRideRequest();
+            int flex = ride.getTimeFlexibilityMinutes() != null ? ride.getTimeFlexibilityMinutes() : 30;
+
+            // Если время выезда + гибкость уже прошли
+            if (ride.getDepartureTime().plusMinutes(flex).isBefore(now)) {
+                if (match.getStatus() == MatchStatus.CONFIRMING && ride.getRole() == Role.DRIVER) {
+                    rideRequestRepository.incrementSeats(ride.getId(), match.getSeats());
+                }
+                match.setStatus(MatchStatus.REJECTED);
+                matchRepository.save(match);
+
+                if (match.getId().equals(ride.getAcceptedMatchId())) {
+                    ride.setAcceptedMatchId(null);
+                    ride.setStatus(RideStatus.EXPIRED);
+                    rideRequestRepository.save(ride);
+                }
+            }
         }
     }
 }

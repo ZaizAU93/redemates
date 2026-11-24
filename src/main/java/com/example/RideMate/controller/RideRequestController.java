@@ -139,7 +139,7 @@ public class RideRequestController {
     }
 
 
-    /** Предпросмотр альтернативных дорог: [[lat, lon], ...] для каждого варианта. */
+    /** Предпросмотр альтернативных дорог: [[lat, lon], ...] для каждого варианта.
     @GetMapping("/alternatives")
     public List<List<double[]>> routeAlternatives(
             @RequestParam double fromLat, @RequestParam double fromLon,
@@ -152,5 +152,32 @@ public class RideRequestController {
         return rideRequestService.getRouteAlternativesCoords(from, List.of(), to);
 
     }
+     */
 
+    /** Предпросмотр альтернативных дорог: [[lat, lon], ...] для каждого варианта. */
+    @GetMapping("/alternatives")
+    public List<List<double[]>> routeAlternatives(
+            @RequestParam double fromLat, @RequestParam double fromLon,
+            @RequestParam double toLat, @RequestParam double toLon,
+            @RequestParam(required = false) List<String> waypoints, // <--- ДОБАВИЛИ ПАРАМЕТР
+            @RequestHeader(value = "X-Telegram-Init-Data", required = false) String tgInitData) {
+
+        Point from = new GeometryFactory(new PrecisionModel(), 4326)
+                .createPoint(new Coordinate(fromLon, fromLat));
+        Point to = new GeometryFactory(new PrecisionModel(), 4326)
+                .createPoint(new Coordinate(toLon, toLat));
+
+        // Парсим строки "lat,lon" в список точек
+        List<double[]> wpList = new java.util.ArrayList<>();
+        if (waypoints != null) {
+            for (String wp : waypoints) {
+                String[] parts = wp.split(",");
+                if (parts.length == 2) {
+                    wpList.add(new double[]{Double.parseDouble(parts[0]), Double.parseDouble(parts[1])});
+                }
+            }
+        }
+
+        return rideRequestService.getRouteAlternativesCoords(from, wpList, to);
+    }
 }

@@ -111,11 +111,32 @@ function showMessage(message, title = 'Информация') {
 }
 
 function roleEmoji(role) { return role === 'DRIVER' ? '🚗' : '🚶'; }
+function translateMatchStatus(s) {
+    const map = {
+        PENDING: 'Ожидает', CONFIRMING: 'Ждёт подтв.', CONFIRMED: 'Подтв.',
+        COMPLETED: 'Состоялась', NO_SHOW_PASSENGER: 'Пасс. не пришёл',
+        NO_SHOW_DRIVER: 'Вод. не выехал', DISPUTED: 'Спор', REJECTED: 'Отклонено'
+    };
+    return map[s] || s;
+}
+
+function translateRideStatus(s) {
+    const map = {
+        ACTIVE: 'Активна', MATCHED: 'Есть бронь',
+        COMPLETED: 'Завершена', CANCELLED: 'Отменена', EXPIRED: 'Истекла'
+    };
+    return map[s] || s;
+}
 function oppositeRole(role) { return role === 'PASSENGER' ? 'DRIVER' : 'PASSENGER'; }
 
 // ---------- Навигация ----------
 
 function switchScreen(screenId) {
+
+    if (screenId !== 'chatsScreen') {
+        document.querySelector('.app-container').classList.remove('chat-open');
+    }
+
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const target = document.getElementById(screenId);
     if (target) target.classList.add('active');
@@ -537,7 +558,12 @@ function toLocalISO(d) {
 function setQuickTime(kind) {
     const el = document.getElementById('departureTimeInput');
     const now = new Date();
-    if (kind === 'now') el.value = toLocalISO(now);
+
+    if (kind === 'now') {
+        // Добавляем 15 минут к текущему времени, чтобы успеть найти попутчика
+        now.setMinutes(now.getMinutes() + 15);
+        el.value = toLocalISO(now);
+    }
     else if (kind === 'hour') { now.setHours(now.getHours() + 1); el.value = toLocalISO(now); }
     else if (kind === 'morning') { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); el.value = toLocalISO(d); }
     else if (kind === 'evening') { const d = new Date(now); if (now.getHours() >= 19) d.setDate(d.getDate() + 1); d.setHours(19, 0, 0, 0); el.value = toLocalISO(d); }
@@ -602,11 +628,23 @@ async function searchWaypoint() {
     const places = await resp.json();
     const resultsDiv = document.getElementById('waypointResults');
     resultsDiv.innerHTML = '';
+
+    if (places.length === 0) {
+        resultsDiv.innerHTML = '<p style="font-size:13px; color:var(--text-secondary);">Ничего не найдено</p>';
+        return;
+    }
+
     places.slice(0, 5).forEach(place => {
         const item = document.createElement('div');
         item.className = 'search-item';
         item.innerHTML = `<div class="place-name">${escapeHtml(place.displayName)}</div>`;
-        item.onclick = () => { waypointSearchResult = place; document.getElementById('waypointInput').value = place.displayName; resultsDiv.innerHTML = ''; };
+
+        // ПРИ КЛИКЕ СРАЗУ ДОБАВЛЯЕМ В СПИСОК
+        item.onclick = () => {
+            document.getElementById('waypointInput').value = '';
+            resultsDiv.innerHTML = '';
+            addWaypoint(place); // Сразу вызываем добавление
+        };
         resultsDiv.appendChild(item);
     });
 }
@@ -963,33 +1001,51 @@ async function loadMyRides() {
     const rides = await resp.json();
     const list = document.getElementById('myRidesList');
     list.innerHTML = '';
+
     const toggleBtn = document.querySelector('#showAllRidesBtn button');
     if (toggleBtn) toggleBtn.textContent = showAllRides ? 'Показать только активные' : 'Показать все';
+
     if (rides.length === 0) {
-        list.innerHTML = showAllRides
-            ? '<p>У вас нет заявок</p>'
-            : '<p>Активных заявок нет. Нажмите «Показать все», чтобы увидеть заявки с бронью.</p>';
+        list.innerHTML = showAllRides ? '<p>У вас нет заявок</p>' : '<p>Активных заявок нет. Нажмите «Показать все», чтобы увидеть заявки с бронью.</p>';
         return;
     }
-    rides.forEach(ride => {
+
+    for (const ride of rides) {
         const card = document.createElement('div');
         card.className = 'ride-card';
         const roleIcon = ride.role === 'PASSENGER' ? '🚶' : '🚗';
         const timeStr = ride.departureTime ? new Date(ride.departureTime).toLocaleString() : 'Время не указано';
         const seatsInfo = ride.availableSeats ? ` · мест: ${ride.availableSeats}` : (ride.passengerCount ? ` · пассажиров: ${ride.passengerCount}` : '');
-        const priceInfo = ride.pricePerSeat ? ` · 💰 ${ride.pricePerSeat} BYN/место` : '';
+        const priceInfo = ride.pricePerSeat ? ` · 💰 ${ride.pricePerSeat} BYN` : '';
+        const routeId = `ride_${ride.id}`;
+
         card.innerHTML = `
             <div class="ride-header">
                 <span class="role-icon">${roleIcon}</span>
-                <span class="role-name">${ride.role === 'PASSENGER' ? 'Пассажир' : 'Водитель'}</span>
-                <span class="status-badge ${ride.status.toLowerCase()}">${escapeHtml(ride.status)}</span>
+                <span class="role-name">Моя заявка (${ride.role === 'PASSENGER' ? 'Пассажир' : 'Водитель'})</span>
+                <span class="status-badge ${ride.status.toLowerCase()}">${escapeHtml(translateRideStatus(ride.status))}</span>
+            </div>
+            <div class="details" style="font-weight:600; margin: 6px 0; font-size: 13px;">
+                <span id="${routeId}_from">📍 Загрузка...</span> → <span id="${routeId}_to">📍 Загрузка...</span>
             </div>
             <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsInfo)}${escapeHtml(priceInfo)}</div>
-            ${ride.note ? `<div class="details">${escapeHtml(ride.note)}</div>` : ''}
-            ${ride.status === 'MATCHED' ? '<div class="details" style="color:#1565c0;font-weight:600;">🤝 Есть бронь. Подтверждение — во вкладке «Мои отклики»</div>' : ''}
+            ${ride.note ? `<div class="details" style="color:var(--text-secondary);">${escapeHtml(ride.note)}</div>` : ''}
+            ${ride.status === 'MATCHED' ? '<div class="details" style="color:#1565c0;font-weight:600; margin-top:4px;">🤝 Есть бронь. Подтверждение — во вкладке «Мои отклики»</div>' : ''}
         `;
+
+        // Асинхронно подтягиваем адреса
+        reverseGeocodeShort(ride.fromLat, ride.fromLon).then(addr => {
+            const el = document.getElementById(`${routeId}_from`);
+            if (el) el.textContent = addr;
+        });
+        reverseGeocodeShort(ride.toLat, ride.toLon).then(addr => {
+            const el = document.getElementById(`${routeId}_to`);
+            if (el) el.textContent = addr;
+        });
+
         const actions = document.createElement('div');
         actions.className = 'actions';
+
         if (ride.status === 'ACTIVE') {
             const cancelBtn = document.createElement('button');
             cancelBtn.className = 'btn btn-sm btn-secondary';
@@ -1002,112 +1058,197 @@ async function loadMyRides() {
                 }
             };
             actions.appendChild(cancelBtn);
+
             const responsesBtn = document.createElement('button');
             responsesBtn.className = 'btn btn-sm';
-            responsesBtn.textContent = pendingResponsesCount > 0
-                ? `Отклики (${pendingResponsesCount}) 🔔`
-                : 'Отклики';
+            responsesBtn.textContent = pendingResponsesCount > 0 ? `Отклики (${pendingResponsesCount}) 🔔` : 'Отклики';
             responsesBtn.onclick = () => loadResponsesForRide(ride.id);
             actions.appendChild(responsesBtn);
         } else if (ride.status === 'MATCHED') {
-            const myResponsesBtn = document.createElement('button');
-            myResponsesBtn.className = 'btn btn-sm';
-            myResponsesBtn.textContent = 'Мои отклики';
-            myResponsesBtn.onclick = () => { switchRidesTab('myResponses'); };
-            actions.appendChild(myResponsesBtn);
+            const responsesBtn = document.createElement('button');
+            responsesBtn.className = 'btn btn-sm btn-secondary';
+            responsesBtn.textContent = 'Отклики на заявку';
+            responsesBtn.onclick = () => loadResponsesForRide(ride.id);
+            actions.appendChild(responsesBtn);
+
             if (ride.acceptedMatchId) {
                 const chatBtn = document.createElement('button');
                 chatBtn.className = 'btn btn-sm btn-secondary';
                 chatBtn.textContent = 'Чат';
                 chatBtn.onclick = () => { switchScreen('chatsScreen'); openChat(ride.acceptedMatchId); };
                 actions.appendChild(chatBtn);
+
+                // Кнопка завершения поездки прямо здесь
+                const completeBtn = document.createElement('button');
+                completeBtn.className = 'btn btn-sm';
+                completeBtn.textContent = '✅ Завершить';
+                completeBtn.onclick = () => reportOutcome(ride.acceptedMatchId, 'COMPLETED');
+                actions.appendChild(completeBtn);
             }
         } else if (ride.status === 'COMPLETED') {
-            const reviewBtn = document.createElement('button');
-            reviewBtn.className = 'btn btn-sm btn-secondary';
-            reviewBtn.textContent = 'Оставить отзыв';
-            reviewBtn.onclick = async () => {
-                const r = await fetch(`/api/reviews/counterparty/${ride.id}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
-                if (r.ok) openReviewModal(ride.id, Number(await r.json()));
-                else showMessage(await r.text(), 'Ошибка');
-            };
-            actions.appendChild(reviewBtn);
+            if (ride.hasReviewed) {
+                const reviewedText = document.createElement('div');
+                reviewedText.style.cssText = 'font-size:13px; color:var(--text-secondary); margin-top:8px; font-weight:600;';
+                reviewedText.textContent = '✅ Отзыв оставлен';
+                actions.appendChild(reviewedText);
+            } else {
+                const reviewBtn = document.createElement('button');
+                reviewBtn.className = 'btn btn-sm btn-secondary';
+                reviewBtn.textContent = 'Оставить отзыв';
+                reviewBtn.onclick = async () => {
+                    const r = await fetch(`/api/reviews/counterparty/${ride.id}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    if (r.ok) openReviewModal(ride.id, Number(await r.json()));
+                    else showMessage(await r.text(), 'Ошибка');
+                };
+                actions.appendChild(reviewBtn);
+            }
         }
+
         if (actions.children.length > 0) card.appendChild(actions);
         list.appendChild(card);
-    });
+    }
 }
 
 
 
 async function loadResponsesForRide(rideId) {
-    const resp = await fetch(`/api/matches/for-request?rideRequestId=${rideId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
-    if (!resp.ok) return;
-    const matches = await resp.json();
-    document.getElementById('responsesBlock').classList.remove('hidden');
-    const list = document.getElementById('responsesList');
-    list.innerHTML = '';
-    if (matches.length === 0) { list.innerHTML = '<p>Откликов нет</p>'; return; }
-    matches.forEach(match => {
-        const item = document.createElement('div');
-        item.className = 'match-item';
-        let contactInfo = '';
-        if (match.status === 'CONFIRMED' && match.contactUsername) contactInfo = `<div>📞 @${escapeHtml(match.contactUsername)}</div>`;
-        const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
-        item.innerHTML = `
-            <div class="responder">${escapeHtml(match.responderName)}</div>
-            <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}${escapeHtml(seatsNote)}</span>
-            <div class="time">${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
-            ${contactInfo}
-        `;
-        if (match.status === 'PENDING') {
-            const acceptBtn = document.createElement('button');
-            acceptBtn.className = 'btn btn-sm';
-            acceptBtn.textContent = 'Принять';
-            acceptBtn.onclick = async () => {
-                const r2 = await fetch(`/api/matches/${match.id}/accept`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
-                if (r2.ok) showMessage('Бронь принята. Ждём подтверждения от второй стороны.');
-                else showMessage(await r2.text(), 'Ошибка');
-                loadResponsesForRide(rideId);
-            };
-            const rejectBtn = document.createElement('button');
-            rejectBtn.className = 'btn btn-sm btn-secondary';
-            rejectBtn.textContent = 'Отклонить';
-            rejectBtn.onclick = async () => {
-                await fetch(`/api/matches/${match.id}/reject`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
-                loadResponsesForRide(rideId);
-            };
-            item.appendChild(acceptBtn);
-            item.appendChild(rejectBtn);
-        } else if (match.status === 'CONFIRMING') {
-            const cancelBtn = document.createElement('button');
-            cancelBtn.className = 'btn btn-sm btn-secondary';
-            cancelBtn.textContent = 'Отменить бронь';
-            cancelBtn.onclick = async () => {
-                if (confirm('Отменить бронь? Места вернутся в пул.')) {
-                    await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
-                    loadResponsesForRide(rideId);
-                }
-            };
-            item.appendChild(cancelBtn);
-        }
-        if (match.status === 'CONFIRMED') {
-            const ownerRole = match.rideRequest?.role || oppositeRole(currentUser.role);
-            const counterpart = ownerRole === 'DRIVER' ? 'NO_SHOW_PASSENGER' : 'NO_SHOW_DRIVER';
-            const okBtn = document.createElement('button');
-            okBtn.className = 'btn btn-sm';
-            okBtn.textContent = '✅ Состоялась';
-            okBtn.onclick = () => reportOutcome(match.id, 'COMPLETED');
-            item.appendChild(okBtn);
-            const noBtn = document.createElement('button');
-            noBtn.className = 'btn btn-sm btn-secondary';
-            noBtn.textContent = counterpart === 'NO_SHOW_PASSENGER' ? '⚠️ Пассажир не пришёл' : '⚠️ Водитель не выехал';
-            noBtn.onclick = () => reportOutcome(match.id, counterpart);
-            item.appendChild(noBtn);
+    try {
+        const resp = await fetch(`/api/matches/for-request?rideRequestId=${rideId}`, {headers: {'X-Telegram-Init-Data': tgInitData}});
+
+        if (!resp.ok) {
+            const err = await resp.text();
+            showMessage('Ошибка сервера: ' + err.slice(0, 100), 'Ошибка');
+            return;
         }
 
-        list.appendChild(item);
-    });
+        const matches = await resp.json();
+        const block = document.getElementById('responsesBlock');
+        block.classList.remove('hidden');
+
+        setTimeout(() => {
+            block.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }, 100);
+
+        const list = document.getElementById('responsesList');
+        list.innerHTML = '';
+        if (matches.length === 0) {
+            list.innerHTML = '<p>Откликов нет</p>';
+            return;
+        }
+
+        for (const match of matches) {
+            const item = document.createElement('div');
+            item.className = 'match-item';
+            let contactInfo = '';
+            if (match.status === 'CONFIRMED' && match.contactUsername) {
+                contactInfo = `<div style="margin-top:4px;">📞 @${escapeHtml(match.contactUsername)}</div>`;
+            }
+            const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
+            const reviewsId = `rev_resp_${match.id}`;
+
+            // Безопасное извлечение рейтинга (на случай если пришла строка)
+            const ratingVal = match.responderRating ? Number(match.responderRating) : null;
+            const ratingStr = ratingVal ? `⭐ ${ratingVal.toFixed(1)}` : '⭐ Нет оценок';
+            const tripsStr = `Поездок: ${match.responderTripCount || 0}`;
+
+            item.innerHTML = `
+            <div class="ride-header">
+                <span class="role-icon">👤</span>
+                <span class="role-name" style="flex:1;">${escapeHtml(match.responderName)}</span>
+                <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(translateMatchStatus(match.status))}${escapeHtml(seatsNote)}</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;">
+                ${ratingStr} · ${tripsStr}
+            </div>
+            <div class="time">Отклик отправлен: ${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
+            <div id="${reviewsId}" style="margin-top: 10px;"></div>
+            ${contactInfo}
+        `;
+
+            // Оборачиваем в try-catch, чтобы ошибка отзывов не ломала отрисовку кнопок
+            try {
+                loadUserReviews(match.responderTelegramId, document.getElementById(reviewsId));
+            } catch(err) {
+                console.warn("Не удалось загрузить отзывы", err);
+            }
+
+            // ===== КНОПКИ УПРАВЛЕНИЯ =====
+            if (match.status === 'PENDING') {
+                const acceptBtn = document.createElement('button');
+                acceptBtn.className = 'btn btn-sm';
+                acceptBtn.textContent = 'Принять';
+                acceptBtn.onclick = async () => {
+                    const r2 = await fetch(`/api/matches/${match.id}/accept`, { method: 'PUT', headers: {'X-Telegram-Init-Data': tgInitData} });
+                    if (r2.ok) showMessage('Бронь принята. Ждём подтверждения от второй стороны.');
+                    else showMessage(await r2.text(), 'Ошибка');
+                    loadResponsesForRide(rideId);
+                };
+                const rejectBtn = document.createElement('button');
+                rejectBtn.className = 'btn btn-sm btn-secondary';
+                rejectBtn.textContent = 'Отклонить';
+                rejectBtn.onclick = async () => {
+                    await fetch(`/api/matches/${match.id}/reject`, { method: 'PUT', headers: {'X-Telegram-Init-Data': tgInitData} });
+                    loadResponsesForRide(rideId);
+                };
+                item.appendChild(acceptBtn);
+                item.appendChild(rejectBtn);
+            }
+
+            if (match.status === 'CONFIRMING') {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'btn btn-sm btn-secondary';
+                cancelBtn.textContent = 'Отменить бронь';
+                cancelBtn.onclick = async () => {
+                    if (confirm('Отменить бронь? Места вернутся в пул.')) {
+                        await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: {'X-Telegram-Init-Data': tgInitData} });
+                        loadResponsesForRide(rideId);
+                    }
+                };
+                item.appendChild(cancelBtn);
+            }
+
+            if (match.status === 'CONFIRMED') {
+                const counterpart = currentUser.role === 'PASSENGER' ? 'NO_SHOW_DRIVER' : 'NO_SHOW_PASSENGER';
+
+                const okBtn = document.createElement('button');
+                okBtn.className = 'btn btn-sm';
+                okBtn.textContent = '✅ Состоялась';
+                okBtn.onclick = () => reportOutcome(match.id, 'COMPLETED');
+                item.appendChild(okBtn);
+
+                const noBtn = document.createElement('button');
+                noBtn.className = 'btn btn-sm btn-secondary';
+                noBtn.textContent = counterpart === 'NO_SHOW_PASSENGER' ? '⚠️ Пассажир не пришёл' : '⚠️ Водитель не выехал';
+                noBtn.onclick = () => reportOutcome(match.id, counterpart);
+                item.appendChild(noBtn);
+            }
+
+            if (match.status === 'COMPLETED') {
+                if (match.hasReviewed) {
+                    const reviewedText = document.createElement('div');
+                    reviewedText.style.cssText = 'font-size:13px; color:var(--text-secondary); margin-top:8px; font-weight:600;';
+                    reviewedText.textContent = '✅ Отзыв оставлен';
+                    item.appendChild(reviewedText);
+                } else {
+                    const reviewBtn = document.createElement('button');
+                    reviewBtn.className = 'btn btn-sm';
+                    reviewBtn.textContent = '⭐ Оставить отзыв';
+                    reviewBtn.onclick = async () => {
+                        const r = await fetch(`/api/reviews/counterparty/${match.rideRequestId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+                        if (r.ok) openReviewModal(match.rideRequestId, Number(await r.json()));
+                        else showMessage(await r.text(), 'Ошибка');
+                    };
+                    item.appendChild(reviewBtn);
+                }
+            }
+
+            list.appendChild(item);
+        }
+    } catch (e) {
+        // ТЕПЕРЬ МЫ УВИДИМ ОШИБКУ
+        console.error("Ошибка при загрузке откликов:", e);
+        showMessage("Ошибка интерфейса: " + e.message, "Ошибка");
+    }
 }
 
 async function loadMyResponses() {
@@ -1117,21 +1258,57 @@ async function loadMyResponses() {
     const list = document.getElementById('myResponsesList');
     list.innerHTML = '';
     if (matches.length === 0) { list.innerHTML = '<p>Вы ещё не откликались</p>'; return; }
-    matches.forEach(match => {
+
+    for (const match of matches) {
+        // ВАЖНО: здесь должен быть continue, а не return!
+        // Иначе одна отмененная заявка сломает отрисовку всего списка.
+        if (match.status === 'REJECTED' || match.status === 'EXPIRED') continue;
+
         const item = document.createElement('div');
         item.className = 'match-item';
         let contactInfo = '';
-        if (match.status === 'CONFIRMED' && match.contactUsername) contactInfo = `<div>📞 @${escapeHtml(match.contactUsername)}</div>`;
+        if (match.status === 'CONFIRMED' && match.contactUsername) {
+            contactInfo = `<div style="margin-top:4px;">📞 @${escapeHtml(match.contactUsername)}</div>`;
+        }
         const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
-        const rideInfo = match.rideRequest
-            ? `${roleEmoji(match.rideRequest.role)} ${escapeHtml(match.rideRequest.fromAddress || `(${match.rideRequest.fromLat.toFixed(2)}, …)`)} → ${escapeHtml(match.rideRequest.toAddress || '')}`
-            : `Заявка #${escapeHtml(match.rideRequestId)}`;
+        const routeId = `resp_${match.id}`;
+        const reviewsId = `rev_owner_${match.id}`;
+
+        const ratingStr = match.ownerRating ? `⭐ ${Number(match.ownerRating).toFixed(1)}` : '⭐ Нет оценок';
+        const tripsStr = `Поездок: ${match.ownerTripCount || 0}`;
+        const timeStr = match.departureTime ? new Date(match.departureTime).toLocaleString() : 'Время не указано';
+        const priceStr = match.pricePerSeat ? `<div style="color:var(--primary);font-weight:600;margin-top:2px;">💰 ${match.pricePerSeat} BYN</div>` : '';
+
         item.innerHTML = `
-            <div class="responder">${rideInfo}</div>
-            <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(match.status)}${escapeHtml(seatsNote)}</span>
-            <div class="time">${escapeHtml(new Date(match.createdAt).toLocaleString())}</div>
+            <div class="ride-header">
+                <span class="role-icon">👤</span>
+                <span class="role-name" style="flex:1;">Отклик на заявку ${escapeHtml(match.ownerName)}</span>
+               <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(translateMatchStatus(match.status))}${escapeHtml(seatsNote)}</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;">
+                ${ratingStr} · ${tripsStr}
+            </div>
+            <div class="details" style="font-weight:600; margin: 6px 0; font-size:13px;">
+                <span id="${routeId}_from">📍 Загрузка...</span> → <span id="${routeId}_to">📍 Загрузка...</span>
+            </div>
+            <div class="time">🕒 ${escapeHtml(timeStr)}</div>
+            ${priceStr}
+            ${match.note ? `<div class="details" style="color:var(--text-secondary); margin-top:4px;">${escapeHtml(match.note)}</div>` : ''}
+            
+            <div id="${reviewsId}" style="margin-top: 10px;"></div>
             ${contactInfo}
         `;
+
+        reverseGeocodeShort(match.fromLat, match.fromLon).then(addr => {
+            const el = document.getElementById(`${routeId}_from`);
+            if (el) el.textContent = addr;
+        });
+        reverseGeocodeShort(match.toLat, match.toLon).then(addr => {
+            const el = document.getElementById(`${routeId}_to`);
+            if (el) el.textContent = addr;
+        });
+
+        loadUserReviews(match.ownerTelegramId, document.getElementById(reviewsId));
 
         if (match.status === 'PENDING') {
             const cancelBtn = document.createElement('button');
@@ -1144,6 +1321,7 @@ async function loadMyResponses() {
             };
             item.appendChild(cancelBtn);
         }
+
         if (match.status === 'CONFIRMING') {
             const confirmBtn = document.createElement('button');
             confirmBtn.className = 'btn btn-sm';
@@ -1156,14 +1334,17 @@ async function loadMyResponses() {
             };
             item.appendChild(confirmBtn);
         }
+
+        // ВОТ ЭТОТ БЛОК ТЫ ЗАБЫЛ ДОБАВИТЬ
         if (match.status === 'CONFIRMED') {
-            const ownerRole = match.rideRequest?.role || oppositeRole(currentUser.role);
-            const counterpart = ownerRole === 'DRIVER' ? 'NO_SHOW_PASSENGER' : 'NO_SHOW_DRIVER';
+            const counterpart = currentUser.role === 'PASSENGER' ? 'NO_SHOW_DRIVER' : 'NO_SHOW_PASSENGER';
+
             const okBtn = document.createElement('button');
             okBtn.className = 'btn btn-sm';
             okBtn.textContent = '✅ Состоялась';
             okBtn.onclick = () => reportOutcome(match.id, 'COMPLETED');
             item.appendChild(okBtn);
+
             const noBtn = document.createElement('button');
             noBtn.className = 'btn btn-sm btn-secondary';
             noBtn.textContent = counterpart === 'NO_SHOW_PASSENGER' ? '⚠️ Пассажир не пришёл' : '⚠️ Водитель не выехал';
@@ -1171,8 +1352,27 @@ async function loadMyResponses() {
             item.appendChild(noBtn);
         }
 
+        if (match.status === 'COMPLETED') {
+            if (match.hasReviewed) {
+                const reviewedText = document.createElement('div');
+                reviewedText.style.cssText = 'font-size:13px; color:var(--text-secondary); margin-top:8px; font-weight:600;';
+                reviewedText.textContent = '✅ Отзыв оставлен';
+                item.appendChild(reviewedText);
+            } else {
+                const reviewBtn = document.createElement('button');
+                reviewBtn.className = 'btn btn-sm';
+                reviewBtn.textContent = '⭐ Оставить отзыв';
+                reviewBtn.onclick = async () => {
+                    const r = await fetch(`/api/reviews/counterparty/${match.rideRequestId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+                    if (r.ok) openReviewModal(match.rideRequestId, Number(await r.json()));
+                    else showMessage(await r.text(), 'Ошибка');
+                };
+                item.appendChild(reviewBtn);
+            }
+        }
+
         list.appendChild(item);
-    });
+    }
 }
 
 // ---------- Чаты ----------
@@ -1209,11 +1409,16 @@ async function loadChats() {
 function openChat(matchId, peerName) {
     currentMatchId = matchId;
     currentPeerName = peerName || 'Собеседник';
+
+    // ДОБАВЛЯЕМ КЛАСС ДЛЯ СКРЫТИЯ МЕНЮ
+    document.querySelector('.app-container').classList.add('chat-open');
+
     document.getElementById('chatWindow').classList.remove('hidden');
     document.getElementById('chatsListCard').classList.add('hidden');
     document.getElementById('chatTitle').textContent = currentPeerName;
     document.getElementById('messageInput').value = '';
     refreshMessages();
+
     if (chatPollingInterval) clearInterval(chatPollingInterval);
     chatPollingInterval = setInterval(refreshMessages, 3000);
 }
@@ -1221,6 +1426,10 @@ function openChat(matchId, peerName) {
 function closeChatWindow() {
     currentMatchId = null;
     if (chatPollingInterval) clearInterval(chatPollingInterval);
+
+    // УБИРАЕМ КЛАСС, ВОЗВРАЩАЕМ МЕНЮ
+    document.querySelector('.app-container').classList.remove('chat-open');
+
     document.getElementById('chatWindow').classList.add('hidden');
     document.getElementById('chatsListCard').classList.remove('hidden');
     loadChats();
@@ -1521,8 +1730,17 @@ async function submitReview() {
         headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
         body: JSON.stringify({ rideRequestId: reviewRideRequestId, reviewedTelegramId: reviewTargetTelegramId, rating: selectedRating, comment })
     });
-    if (resp.ok) { showMessage('Спасибо за отзыв!'); closeReviewModal(); loadMyRides(); }
-    else showMessage(await resp.text(), 'Ошибка');
+    if (resp.ok) {
+        showMessage('Спасибо за отзыв!');
+        closeReviewModal();
+        // Перерисовываем все списки, чтобы кнопка пропала
+        loadMyRides();
+        loadMyResponses();
+        if (typeof currentRideId === 'number') loadResponsesForRide(currentRideId);
+    } else {
+        showMessage(await resp.text(), 'Ошибка');
+    }
+
 }
 
 // ---------- Профиль ----------
@@ -1634,6 +1852,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ===== Адреса и отзывы в «Деталях заявки» =====
 
 const addressCache = new Map();
+const reviewsCache = new Map();
 
 async function reverseGeocodeShort(lat, lon) {
     const key = lat.toFixed(4) + ',' + lon.toFixed(4);
@@ -1655,30 +1874,50 @@ async function reverseGeocodeShort(lat, lon) {
 }
 
 async function loadUserReviews(telegramId, container) {
+    if (!telegramId || !container) return;
+
+    // Если отзывы уже загружали — берём из кэша
+    if (reviewsCache.has(telegramId)) {
+        container.innerHTML = reviewsCache.get(telegramId);
+        return;
+    }
+
     try {
+        container.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);">Загрузка отзывов...</div>';
         const resp = await fetch(`/api/reviews/about?telegramId=${telegramId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
-        if (!resp.ok) { container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);">Пока нет отзывов</p>'; return; }
-        const reviews = await resp.json();
-        if (!reviews.length) {
-            container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);">Пока нет отзывов</p>';
+
+        if (!resp.ok) {
+            container.innerHTML = '';
             return;
         }
-        const avg = reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length;
-        const stars = '⭐'.repeat(Math.round(avg));
-        let html = `<div style="font-weight:600;margin-bottom:6px;">${stars} ${avg.toFixed(1)} · отзывов: ${reviews.length}</div>`;
-        reviews.slice(0, 5).forEach(r => {
-            const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
-            html += `<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border,#eee);">
+
+        const reviews = await resp.json();
+        if (!reviews.length) {
+            const emptyHtml = '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">Отзывов пока нет</div>';
+            container.innerHTML = emptyHtml;
+            reviewsCache.set(telegramId, emptyHtml);
+            return;
+        }
+
+        let html = `<div style="font-size:12px;font-weight:600;margin-bottom:4px;color:var(--text-secondary);">Последние отзывы:</div>`;
+
+        // Показываем 2 последних отзыва
+        reviews.slice(0, 2).forEach(r => {
+            html += `<div style="font-size:12px;padding:6px 8px;background:#f8f9fa;border-radius:8px;margin-bottom:4px;border-left:2px solid var(--primary);">
                 <strong>${escapeHtml(r.authorName || 'Пользователь')}</strong>
                 <span style="color:#ff9800;">${'⭐'.repeat(r.rating || 0)}</span>
-                <span style="color:var(--text-secondary);"> · ${escapeHtml(date)}</span>
-                ${r.comment ? `<div style="margin-top:2px;">${escapeHtml(r.comment)}</div>` : ''}
+                ${r.comment ? `<div style="margin-top:2px;color:var(--text-primary);">"${escapeHtml(r.comment)}"</div>` : ''}
             </div>`;
         });
-        if (reviews.length > 5) html += '<p style="font-size:12px;color:var(--text-secondary);">…и ещё ' + (reviews.length - 5) + '</p>';
+
+        if (reviews.length > 2) {
+            html += `<div style="font-size:11px;color:var(--primary);margin-top:2px;">...и ещё ${reviews.length - 2} отзывов</div>`;
+        }
+
         container.innerHTML = html;
+        reviewsCache.set(telegramId, html);
     } catch (e) {
-        container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary);">Пока нет отзывов</p>';
+        container.innerHTML = '';
     }
 }
 
@@ -1853,14 +2092,21 @@ const ALT_COLORS = ['#1a73e8', '#f4511e', '#2e7d32'];
 
 async function showRouteAlternatives() {
     if (!selectedFrom || !selectedTo) { showMessage('Сначала выберите обе точки'); return; }
-    // Варианты дороги показываем в карте-модалке — на вкладке «Создать» карты нет
     openMapModal('alternatives');
     document.getElementById('mapModalTitle').textContent = 'Коснитесь линии, чтобы выбрать дорогу';
-    // даём модалке время инициализировать карту
+
     setTimeout(async () => {
         try {
-            const url = `/api/rides/alternatives?fromLat=${selectedFrom.latitude}&fromLon=${selectedFrom.longitude}`
+            let url = `/api/rides/alternatives?fromLat=${selectedFrom.latitude}&fromLon=${selectedFrom.longitude}`
                 + `&toLat=${selectedTo.latitude}&toLon=${selectedTo.longitude}`;
+
+            // ДОБАВЛЯЕМ ПРОМЕЖУТОЧНЫЕ ТОЧКИ В ЗАПРОС
+            if (waypoints && waypoints.length > 0) {
+                waypoints.forEach(wp => {
+                    url += `&waypoints=${wp.latitude},${wp.longitude}`;
+                });
+            }
+
             const resp = await fetch(url, { headers: { 'X-Telegram-Init-Data': tgInitData } });
             if (!resp.ok) throw new Error(await resp.text());
             const routes = await resp.json();
