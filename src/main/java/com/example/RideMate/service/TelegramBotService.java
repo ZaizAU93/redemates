@@ -142,9 +142,13 @@ public class TelegramBotService {
     }
 
     public void sendMessage(Long chatId, String text) {
+        if (chatId == null) {
+            System.err.println("⚠️ sendMessage: chatId is null, message not sent: " + text);
+            return;
+        }
         String body = String.format(
                 "{\"chat_id\": %d, \"text\": \"%s\"}",
-                chatId, text.replace("\"", "\\\"")
+                chatId, text.replace("\"", "\\\"").replace("\n", "\\n")
         );
         try {
             restClient.post()
@@ -154,7 +158,7 @@ public class TelegramBotService {
                     .retrieve()
                     .body(String.class);
         } catch (Exception e) {
-            System.err.println("Ошибка при отправке сообщения: " + e.getMessage());
+            System.err.println("❌ sendMessage failed for chatId=" + chatId + ": " + e.getMessage());
         }
     }
 }

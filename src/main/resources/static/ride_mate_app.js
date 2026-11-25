@@ -221,9 +221,14 @@ async function registerUser() {
         if (!resp.ok) throw new Error(await resp.text());
         currentUser = await resp.json();
 
-        userCurrency = currentUser.currency || 'BYN';
+        // 🔥 Проверка chatId
+        if (!currentUser.chatId) {
+            setTimeout(() => {
+                showMessage('⚠️ Чтобы получать уведомления о поездках, напишите боту @' + BOT_USERNAME + ' /start', 'Важно');
+            }, 1000);
+        }
 
-        // 🔥 ДОБАВИТЬ ЭТУ СТРОКУ:
+        userCurrency = currentUser.currency || 'BYN';
         updatePricePlaceholder();
 
         let greeting = `Привет, ${escapeHtml(currentUser.firstName || 'друг')}!`;
@@ -451,14 +456,10 @@ async function searchPlace(type) {
 function assignPlace(type, place) {
     if (type === 'from') selectedFrom = place;
     if (type === 'to') selectedTo = place;
-    const sel = document.getElementById(type === 'from' ? 'fromSelected' : 'toSelected');
-    sel.classList.remove('hidden');
-    sel.innerHTML = `📍 ${escapeHtml(place.displayName)}`;
     const inp = document.getElementById(type === 'from' ? 'fromInput' : 'toInput');
     if (inp) inp.value = place.displayName;
     const disp = document.getElementById(type === 'from' ? 'fromDisplay' : 'toDisplay');
     if (disp) { disp.textContent = place.displayName; disp.className = 'route-value'; }
-
 }
 
 //------------------------
@@ -960,10 +961,10 @@ function startEditRide(ride) {
     }));
     renderWaypoints();
 
-    document.getElementById('fromSelected').classList.remove('hidden');
-    document.getElementById('fromSelected').innerHTML = `📍 ${escapeHtml(selectedFrom.displayName)}`;
-    document.getElementById('toSelected').classList.remove('hidden');
-    document.getElementById('toSelected').innerHTML = `📍 ${escapeHtml(selectedTo.displayName)}`;
+   // document.getElementById('fromSelected').classList.remove('hidden');
+   // document.getElementById('fromSelected').innerHTML = `📍 ${escapeHtml(selectedFrom.displayName)}`;
+   // document.getElementById('toSelected').classList.remove('hidden');
+   // document.getElementById('toSelected').innerHTML = `📍 ${escapeHtml(selectedTo.displayName)}`;
     const fd = document.getElementById('fromDisplay'), td = document.getElementById('toDisplay');
     if (fd) { fd.textContent = selectedFrom.displayName; fd.className = 'route-value'; }
     if (td) { td.textContent = selectedTo.displayName; td.className = 'route-value'; }
@@ -1101,6 +1102,12 @@ async function loadMyRides() {
         actions.className = 'actions';
 
         if (ride.status === 'ACTIVE') {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn btn-sm';
+            editBtn.textContent = '✏️ Редактировать';
+            editBtn.onclick = () => startEditRide(ride);
+            actions.appendChild(editBtn);
+
             const cancelBtn = document.createElement('button');
             cancelBtn.className = 'btn btn-sm btn-secondary';
             cancelBtn.textContent = 'Отменить';
@@ -1113,11 +1120,7 @@ async function loadMyRides() {
             };
             actions.appendChild(cancelBtn);
 
-            const responsesBtn = document.createElement('button');
-            responsesBtn.className = 'btn btn-sm';
-            responsesBtn.textContent = pendingResponsesCount > 0 ? `Отклики (${pendingResponsesCount}) 🔔` : 'Отклики';
-            responsesBtn.onclick = () => loadResponsesForRide(ride.id);
-            actions.appendChild(responsesBtn);
+// 🔥 Для MATCHED/COMPLETED/CANCELLED кнопка редактирования не добавляется
         } else if (ride.status === 'MATCHED') {
             const responsesBtn = document.createElement('button');
             responsesBtn.className = 'btn btn-sm btn-secondary';
@@ -1131,13 +1134,6 @@ async function loadMyRides() {
                 chatBtn.textContent = 'Чат';
                 chatBtn.onclick = () => { switchScreen('chatsScreen'); openChat(ride.acceptedMatchId); };
                 actions.appendChild(chatBtn);
-
-                // Кнопка завершения поездки прямо здесь
-                const completeBtn = document.createElement('button');
-                completeBtn.className = 'btn btn-sm';
-                completeBtn.textContent = '✅ Завершить';
-                completeBtn.onclick = () => reportOutcome(ride.acceptedMatchId, 'COMPLETED');
-                actions.appendChild(completeBtn);
             }
         } else if (ride.status === 'COMPLETED') {
             if (ride.hasReviewed) {
@@ -1200,7 +1196,6 @@ async function loadResponsesForRide(rideId) {
             const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
             const reviewsId = `rev_resp_${match.id}`;
 
-            // Безопасное извлечение рейтинга (на случай если пришла строка)
             const ratingVal = match.responderRating ? Number(match.responderRating) : null;
             const ratingStr = ratingVal ? `⭐ ${ratingVal.toFixed(1)}` : '⭐ Нет оценок';
             const tripsStr = `Поездок: ${match.responderTripCount || 0}`;
@@ -1219,7 +1214,6 @@ async function loadResponsesForRide(rideId) {
             ${contactInfo}
         `;
 
-            // Оборачиваем в try-catch, чтобы ошибка отзывов не ломала отрисовку кнопок
             try {
                 loadUserReviews(match.responderTelegramId, document.getElementById(reviewsId));
             } catch(err) {
@@ -1228,8 +1222,6 @@ async function loadResponsesForRide(rideId) {
 
             // ===== КНОПКИ УПРАВЛЕНИЯ =====
             if (match.status === 'PENDING') {
-                // Внутри цикла for (const match of matches) { ... }, блок if (match.status === 'PENDING')
-
                 const acceptBtn = document.createElement('button');
                 acceptBtn.className = 'btn btn-sm';
                 acceptBtn.textContent = 'Принять';
@@ -1238,23 +1230,31 @@ async function loadResponsesForRide(rideId) {
                         method: 'PUT',
                         headers: {'X-Telegram-Init-Data': tgInitData}
                     });
-
                     if (r2.ok) {
                         showMessage('Бронь принята. Ждём подтверждения от второй стороны.');
-                        loadResponsesForRide(rideId); // Обновляем список, чтобы скрыть принятый или показать изменения
                     } else {
                         const errText = await r2.text();
-                        // Специальная обработка для гонки данных по местам
                         if (errText.includes('Свободных мест больше нет')) {
-                            showMessage('Места только что закончились. Список обновлен.', 'Внимание');
+                            showMessage('Места только что закончились. Список обновлён.', 'Внимание');
                         } else {
                             showMessage('Ошибка: ' + errText.slice(0, 100), 'Ошибка');
                         }
-                        // 🔥 КРИТИЧЕСКИ ВАЖНО: Перезагружаем список в любом случае при ошибке,
-                        // чтобы UI синхронизировался с реальным состоянием БД
-                        loadResponsesForRide(rideId);
                     }
+                    loadResponsesForRide(rideId);
                 };
+
+                // 🔥 ВОТ ЭТОТ БЛОК БЫЛ ПОТЕРЯН — создаём rejectBtn
+                const rejectBtn = document.createElement('button');
+                rejectBtn.className = 'btn btn-sm btn-secondary';
+                rejectBtn.textContent = 'Отклонить';
+                rejectBtn.onclick = async () => {
+                    await fetch(`/api/matches/${match.id}/reject`, {
+                        method: 'PUT',
+                        headers: {'X-Telegram-Init-Data': tgInitData}
+                    });
+                    loadResponsesForRide(rideId);
+                };
+
                 item.appendChild(acceptBtn);
                 item.appendChild(rejectBtn);
             }
@@ -1310,7 +1310,6 @@ async function loadResponsesForRide(rideId) {
             list.appendChild(item);
         }
     } catch (e) {
-        // ТЕПЕРЬ МЫ УВИДИМ ОШИБКУ
         console.error("Ошибка при загрузке откликов:", e);
         showMessage("Ошибка интерфейса: " + e.message, "Ошибка");
     }
@@ -1475,9 +1474,16 @@ function openChat(matchId, peerName) {
     currentMatchId = matchId;
     currentPeerName = peerName || 'Собеседник';
 
-    // ДОБАВЛЯЕМ КЛАСС ДЛЯ СКРЫТИЯ МЕНЮ
-    document.querySelector('.app-container').classList.add('chat-open');
+    // Ищем имя в списке чатов, если не передано
+    if (!peerName || peerName === 'Собеседник') {
+        const chatItem = document.querySelector(`.chat-item[data-match-id="${matchId}"]`);
+        if (chatItem) {
+            const nameEl = chatItem.querySelector('.chat-name');
+            if (nameEl) currentPeerName = nameEl.textContent;
+        }
+    }
 
+    document.querySelector('.app-container').classList.add('chat-open');
     document.getElementById('chatWindow').classList.remove('hidden');
     document.getElementById('chatsListCard').classList.add('hidden');
     document.getElementById('chatTitle').textContent = currentPeerName;
@@ -1486,19 +1492,22 @@ function openChat(matchId, peerName) {
 
     if (chatPollingInterval) clearInterval(chatPollingInterval);
     chatPollingInterval = setInterval(refreshMessages, 3000);
+
+    // Фокус на поле ввода
+    setTimeout(() => document.getElementById('messageInput').focus(), 100);
+    syncChatHeight();
+    scrollChatToBottom();
 }
 
 function closeChatWindow() {
     currentMatchId = null;
     if (chatPollingInterval) clearInterval(chatPollingInterval);
-
-    // УБИРАЕМ КЛАСС, ВОЗВРАЩАЕМ МЕНЮ
     document.querySelector('.app-container').classList.remove('chat-open');
-
     document.getElementById('chatWindow').classList.add('hidden');
     document.getElementById('chatsListCard').classList.remove('hidden');
     loadChats();
     updateUnreadBadge();
+    document.getElementById('chatWindow').style.removeProperty('--chat-h');
 }
 
 async function refreshMessages() {
@@ -1517,7 +1526,7 @@ async function refreshMessages() {
             row.innerHTML = `<div class="bubble">${escapeHtml(m.text)}<span class="meta">${escapeHtml(meta)}</span></div>`;
             container.appendChild(row);
         });
-        if (wasAtBottom) container.scrollTop = container.scrollHeight;
+        scrollChatToBottom();
     }
 }
 
@@ -1533,6 +1542,7 @@ async function sendMessage() {
     if (resp.ok) {
         input.value = '';
         await refreshMessages();
+        scrollChatToBottom();
     } else {
         const err = await resp.text();
         showMessage(err.replace(/["{}]/g, '').slice(0, 120), 'Ошибка');
@@ -1718,6 +1728,8 @@ async function subscribeFromCurrent() {
 
 function openMapModal(mode) {
     choosingFor = mode;
+    const doneBtn = document.getElementById('mapConfirmBtn');
+    if (doneBtn) doneBtn.classList.toggle('hidden', mode === 'alternatives');
     document.getElementById('mapModal').classList.add('active');
     const titleMap = { from: 'Откуда', to: 'Куда', waypoint: 'Точка по пути' };
     document.getElementById('mapModalTitle').textContent = titleMap[mode] || 'Выберите точку';
@@ -1960,6 +1972,7 @@ function changeRoleFromProfile() { closeProfileModal(); document.getElementById(
     }
 
     startUnreadPolling();
+    bindChatViewport();
     await loadMatchNotifications();   // сначала узнаём про отклики
     loadActiveRide();                  // потом рисуем карточку с бейджем
     startMatchNotifications();
@@ -2235,42 +2248,54 @@ const ALT_COLORS = ['#1a73e8', '#f4511e', '#2e7d32'];
 
 async function showRouteAlternatives() {
     if (!selectedFrom || !selectedTo) { showMessage('Сначала выберите обе точки'); return; }
+
+    let url = `/api/rides/alternatives?fromLat=${selectedFrom.latitude}&fromLon=${selectedFrom.longitude}`
+        + `&toLat=${selectedTo.latitude}&toLon=${selectedTo.longitude}`;
+
+    // 🔥 ДОБАВЛЕНО: Логирование для отладки
+    console.log("📍 Текущие waypoints перед отправкой:", waypoints);
+
+    if (waypoints && waypoints.length > 0) {
+        waypoints.forEach(wp => {
+            url += `&waypoints=${wp.latitude},${wp.longitude}`;
+        });
+    } else {
+        console.warn("⚠️ Внимание: массив waypoints пуст. Маршрут будет построен только по точкам Откуда-Куда.");
+    }
+
+    let routes;
+    try {
+        const resp = await fetch(url, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!resp.ok) throw new Error(await resp.text());
+        routes = await resp.json();
+    } catch (e) {
+        showMessage('Не удалось получить варианты дороги: ' + e.message, 'Ошибка');
+        return;
+    }
+
+    if (!routes || routes.length <= 1) {
+        showMessage('Альтернативных дорог на этом маршруте нет — будет использован основной вариант.', 'info');
+        return;
+    }
+
     openMapModal('alternatives');
     document.getElementById('mapModalTitle').textContent = 'Коснитесь линии, чтобы выбрать дорогу';
 
-    setTimeout(async () => {
-        try {
-            let url = `/api/rides/alternatives?fromLat=${selectedFrom.latitude}&fromLon=${selectedFrom.longitude}`
-                + `&toLat=${selectedTo.latitude}&toLon=${selectedTo.longitude}`;
-
-            // ДОБАВЛЯЕМ ПРОМЕЖУТОЧНЫЕ ТОЧКИ В ЗАПРОС
-            if (waypoints && waypoints.length > 0) {
-                waypoints.forEach(wp => {
-                    url += `&waypoints=${wp.latitude},${wp.longitude}`;
-                });
-            }
-
-            const resp = await fetch(url, { headers: { 'X-Telegram-Init-Data': tgInitData } });
-            if (!resp.ok) throw new Error(await resp.text());
-            const routes = await resp.json();
-            clearAltRoutes();
-            routes.forEach((coords, i) => {
-                const poly = L.polyline(coords, {
-                    color: ALT_COLORS[i] || '#757575', weight: 5, opacity: 0.8
-                }).addTo(map);
-                poly.bindTooltip(`Вариант ${i + 1}`, { sticky: true });
-                poly.on('click', () => selectRouteAlternative(i));
-                altRouteLayers.push(poly);
-            });
-            if (altRouteLayers.length > 0) {
-                map.fitBounds(L.featureGroup(altRouteLayers).getBounds().pad(0.15));
-            }
-            chosenRouteIndex = null;
-        } catch (e) {
-            closeMapModal();
-            showMessage('Не удалось получить варианты дороги: ' + e.message, 'Ошибка');
+    setTimeout(() => {
+        clearAltRoutes();
+        routes.forEach((coords, i) => {
+            const poly = L.polyline(coords, {
+                color: ALT_COLORS[i] || '#757575', weight: 5, opacity: 0.8
+            }).addTo(map);
+            poly.bindTooltip(`Вариант ${i + 1}`, { sticky: true });
+            poly.on('click', () => selectRouteAlternative(i));
+            altRouteLayers.push(poly);
+        });
+        if (altRouteLayers.length > 0) {
+            map.fitBounds(L.featureGroup(altRouteLayers).getBounds().pad(0.15));
         }
-    }, 400);
+        chosenRouteIndex = null;
+    }, 100);
 }
 
 function selectRouteAlternative(i) {
@@ -2560,4 +2585,37 @@ function showToast(text, type = 'info') {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 250);
     }, 3500);
+}
+
+// Пересчёт высоты чата под видимую область (учитывает клавиатуру)
+function syncChatHeight() {
+    const win = document.getElementById('chatWindow');
+    if (!win || win.classList.contains('hidden')) return;
+    // visualViewport.height — реальная высота без клавиатуры (где поддерживается)
+    const h = (window.visualViewport && window.visualViewport.height)
+        ? window.visualViewport.height
+        : window.innerHeight;
+    win.style.setProperty('--chat-h', h + 'px');
+    scrollChatToBottom();
+}
+
+// Всегда показать последнее сообщение
+function scrollChatToBottom() {
+    const c = document.getElementById('chatMessages');
+    if (!c) return;
+    // двойной кадр — чтобы сработало после рендера клавиатуры
+    requestAnimationFrame(() => { c.scrollTop = c.scrollHeight; });
+    setTimeout(() => { c.scrollTop = c.scrollHeight; }, 120);
+}
+
+// Подписка на события Telegram WebApp (клавиатура, expand/collapse)
+function bindChatViewport() {
+    if (!tg || !tg.onEvent) return;
+    tg.onEvent('viewportChanged', () => {
+        syncChatHeight();
+    });
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', syncChatHeight);
+        window.visualViewport.addEventListener('scroll', syncChatHeight);
+    }
 }

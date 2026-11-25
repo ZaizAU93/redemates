@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
+
         :root {
             --primary: #0088cc;
             --primary-dark: #006da3;
@@ -243,6 +244,47 @@
             max-height: calc(100vh - 160px) !important;
             height: calc(100vh - 160px);
         }
+
+        .app-container.chat-open {
+            padding-bottom: 0 !important;
+        }
+        .app-container.chat-open .bottom-nav {
+            display: none !important;
+        }
+        #chatWindow {
+            display: none;
+        }
+        #chatWindow:not(.hidden) {
+            display: flex !important;
+        }
+
+        /* Чат — полноэкранный flex-контейнер, высота задаётся через JS-переменную */
+        .chat-window {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: var(--chat-h, 100vh);   /* ← управляется из JS */
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            z-index: 600;
+            box-shadow: 0 -4px 20px rgba(0,0,0,.08);
+        }
+        .chat-window.hidden { display: none !important; }
+        #chatMessages {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;   /* плавный инерционный скролл на iOS */
+            padding: 12px 14px;
+            overscroll-behavior: contain;        /* не «дёргать» страницу за пределами */
+        }
+        .chat-header-row { flex-shrink: 0; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+        .chat-input-row { flex-shrink: 0; padding: 10px 14px; border-top: 1px solid var(--border); background:#fff; }
+        .chat-input-row input { flex:1; border-radius:22px; padding:12px 16px; font-size:16px; }
+        .chat-input-row .btn { width:auto; padding:12px 20px; margin:0; border-radius:50%; font-size:18px; }
+
+        /* отменяем старые фикс-правила, если они остались */
+        .app-container.chat-open { padding-bottom: 0 !important; }
+        .app-container.chat-open .bottom-nav { display: none !important; }
     </style>
 </head>
 <body>
@@ -436,14 +478,17 @@
             <h3>Сообщения</h3>
             <div id="chatsList"></div>
         </div>
-        <div id="chatWindow" class="card hidden">
+        <div id="chatWindow" class="chat-window hidden">
             <div class="chat-header-row">
                 <button class="back-btn" onclick="closeChatWindow()">←</button>
                 <h3 id="chatTitle">Чат</h3>
             </div>
             <div id="chatMessages"></div>
             <div class="chat-input-row">
-                <input type="text" id="messageInput" placeholder="Сообщение…" onkeydown="if(event.key==='Enter')sendMessage()">
+                <input type="text" id="messageInput" placeholder="Сообщение…"
+                       autocomplete="off" enterkeyhint="send"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();sendMessage();}"
+                       onfocus="scrollChatToBottom()">
                 <button class="btn" onclick="sendMessage()">➤</button>
             </div>
         </div>
@@ -488,7 +533,7 @@
             <button onclick="closeMapModal()" class="close-btn">✕</button>
         </div>
         <div id="mapContainer"></div>
-        <button onclick="confirmMapPoint()" class="btn" style="margin-top: 10px;">Готово</button>
+        <button id="mapConfirmBtn" onclick="confirmMapPoint()" class="btn" style="margin-top: 10px;">Готово</button>
     </div>
 </div>
 
