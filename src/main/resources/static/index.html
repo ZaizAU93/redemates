@@ -71,7 +71,7 @@
         .btn:active { background: var(--primary-dark); }
         .btn-secondary { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
         .btn-sm { padding: 8px 14px; font-size: 13px; border-radius: 10px; width: auto; display: inline-block; margin: 8px 8px 0 0; }
-        .active-tab { background: var(--primary) !important; color: white !important; }
+
 
         /* Сегментные вкладки (в стиле B) */
         .segment { display: flex; background: #e9edf2; border-radius: 12px; padding: 3px; margin-bottom: 12px; }
@@ -274,9 +274,11 @@
             <div id="mapRideList"><div class="empty-state">Загружаем поездки рядом с вами…</div></div>
         </div>
         <div class="card">
-            <h3>Мои подписки на маршруты</h3>
+            <h3>🔔 Мои подписки на маршруты</h3>
+            <p class="muted" style="margin:-6px 0 10px;font-size:12px;">
+                Подписка ≠ заявка. Это «ожидание»: бот сам пришлёт уведомление, когда кто-то поедет по вашему маршруту.
+            </p>
             <div id="subsList"></div>
-            <button class="btn btn-sm btn-secondary" onclick="subscribeFromCurrent()">🔔 Подписаться на маршрут из последней заявки</button>
         </div>
     </div>
 
@@ -378,7 +380,7 @@
                     <span class="time-chip" onclick="setPriceChip('15', this)">15 BYN</span>
                     <span class="time-chip" onclick="setPriceChip('custom', this)">Своя цена</span>
                 </div>
-                <input type="number" id="priceInput" min="0" step="0.5" placeholder="Например: 25" class="hidden" style="margin-top:8px;">
+                <input type="number" id="priceInput" min="0" step="1" placeholder="Цена за место" class="hidden" style="margin-top:8px;">
             </div>
 
             <div class="field hidden" id="timeFlexibilityField">
@@ -552,7 +554,19 @@
         <div class="profile-section-title">📞 Телефон</div>
         <div id="phoneStatus" style="font-size:14px; color:var(--text-secondary); margin-bottom:8px;">Загружаем…</div>
         <div id="phoneForm" class="hidden">
-            <input type="tel" id="phoneInput" placeholder="+37529XXXXXXX">
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <select id="phoneCountryCode" style="width:110px; padding:12px 8px; border:1.5px solid var(--border); border-radius:12px; font-size:15px; background:#fafbfc;">
+                    <option value="+375">🇧🇾 +375</option>
+                    <option value="+7" data-country="RU">🇷🇺 +7 (РФ)</option>
+                    <option value="+7" data-country="KZ">🇰🇿 +7 (КЗ)</option>
+                    <option value="+998">🇺🇿 +998</option>
+                    <option value="+996">🇰🇬 +996</option>
+                    <option value="+992">🇹🇯 +992</option>
+                    <option value="+374">🇦🇲 +374</option>
+                    <option value="+994">🇦🇿 +994</option>
+                </select>
+                <input type="tel" id="phoneInput" placeholder="29 123 45 67" style="flex:1;">
+            </div>
             <button class="btn btn-secondary btn-sm" onclick="requestPhoneCode()">Получить код в боте</button>
             <div id="codeRow" class="hidden" style="margin-top:10px;">
                 <input type="text" id="phoneCodeInput" inputmode="numeric" maxlength="6" placeholder="Код из сообщения бота">

@@ -181,8 +181,16 @@ public class MatchService {
 
         User owner = rideRequest.getUser();
         User responder = match.getResponder();
-        notify(owner, "✅ Бронь подтверждена! Контакты собеседника: @" + responder.getUsername());
-        notify(responder, "✅ Бронь подтверждена! Контакты собеседника: @" + owner.getUsername());
+        // 🔥 ИСПРАВЛЕНИЕ: Корректное формирование контактов
+        String responderContact = (responder.getUsername() != null && !responder.getUsername().isBlank())
+                ? "@" + responder.getUsername()
+                : "по ссылке в профиле";
+        String ownerContact = (owner.getUsername() != null && !owner.getUsername().isBlank())
+                ? "@" + owner.getUsername()
+                : "по ссылке в профиле";
+
+        notify(owner, "✅ Бронь подтверждена! Контакты собеседника: " + responderContact);
+        notify(responder, "✅ Бронь подтверждена! Контакты собеседника: " + ownerContact);
     }
 
     // ---------- Отклонение ----------
@@ -217,6 +225,15 @@ public class MatchService {
         }
         if (match.getStatus() == MatchStatus.REJECTED || match.getStatus() == MatchStatus.COMPLETED) {
             throw new RuntimeException("Бронь уже закрыта");
+        }
+
+        // 🔥 НОВАЯ ПРОВЕРКА: нельзя отменить, если время выезда + гибкость уже прошли
+        LocalDateTime now = LocalDateTime.now();
+        int flex = rideRequest.getTimeFlexibilityMinutes() != null ? rideRequest.getTimeFlexibilityMinutes() : 30;
+        LocalDateTime deadline = rideRequest.getDepartureTime() != null ? rideRequest.getDepartureTime().plusMinutes(flex) : now;
+
+        if (now.isAfter(deadline)) {
+            throw new RuntimeException("Время выезда уже прошло. Отмена невозможна. Используйте функцию отчета о поездке (Состоялась / Не пришел).");
         }
 
         boolean wasHoldingSeats = match.getStatus() == MatchStatus.CONFIRMING || match.getStatus() == MatchStatus.CONFIRMED;

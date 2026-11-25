@@ -27,6 +27,7 @@ public record RideRequestDetailsDTO(
         String vehicleModel,
         String vehicleColor,
         Integer vehicleSeats,
-        boolean isMine
+        boolean isMine,
+        java.util.List<RoutePointDTO> waypoints
 ) {
 }

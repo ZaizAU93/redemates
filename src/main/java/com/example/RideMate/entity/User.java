@@ -42,6 +42,7 @@ public class User {
     @Column(name = "phone_verified", nullable = false)
     private Boolean phoneVerified = false;
 
-
+    @Column(length = 3)
+    private String currency; // BYN, RUB, KZT, UZS, USD
 
 }

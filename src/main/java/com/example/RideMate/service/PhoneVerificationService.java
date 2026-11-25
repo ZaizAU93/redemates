@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClient;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -93,16 +94,42 @@ public class PhoneVerificationService {
     }
 
     /** Телефон в едином формате: +375XXXXXXXXX (или любая страна, если цифр 10–15). */
+// Список поддерживаемых кодов стран (можно расширять)
+    private static final List<String> SUPPORTED_COUNTRY_CODES = List.of(
+            "375",  // 🇧🇾 Беларусь
+            "7",    // 🇷🇺 Россия / 🇰🇿 Казахстан
+            "998",  // 🇺🇿 Узбекистан
+            "996",  // 🇰🇬 Кыргызстан
+            "992",  // 🇹🇯 Таджикистан
+            "374",  // 🇦🇲 Армения
+            "994"   // 🇦🇿 Азербайджан
+    );
+
     private String normalizePhone(String raw) {
         if (raw == null) return null;
-        String digits = raw.replaceAll("[^0-9]", "");
-        if (raw.trim().startsWith("+375") && digits.startsWith("375") && digits.length() == 12) {
-            return "+" + digits;
+
+        String trimmed = raw.trim();
+        // Убираем всё кроме цифр и ведущего плюса
+        String digits = trimmed.replaceAll("[^0-9]", "");
+
+        // Если пользователь ввёл без плюса — добавляем
+        if (!trimmed.startsWith("+")) {
+            digits = trimmed;
         }
-        if (digits.length() >= 10 && digits.length() <= 15) {
-            return "+" + digits;
+
+        // Проверяем, начинается ли номер с одного из поддерживаемых кодов
+        for (String code : SUPPORTED_COUNTRY_CODES) {
+            if (digits.startsWith(code)) {
+                // Базовая проверка длины: код + 7-12 цифр номера
+                int minLen = code.length() + 7;
+                int maxLen = code.length() + 12;
+                if (digits.length() >= minLen && digits.length() <= maxLen) {
+                    return "+" + digits;
+                }
+            }
         }
-        return null;
+
+        return null; // Неподдерживаемый код или некорректная длина
     }
 
     private void sendTelegramMessage(Long chatId, String text) {

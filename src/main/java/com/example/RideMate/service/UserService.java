@@ -57,4 +57,17 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
     }
 
+
+    public static String detectCurrencyByPhone(String phone) {
+        if (phone == null) return "USD";
+        String digits = phone.replaceAll("[^0-9]", "");
+        if (digits.startsWith("375")) return "BYN";
+        if (digits.startsWith("7")) return "RUB";  // Россия и Казахстан — обе используют RUB как основную
+        if (digits.startsWith("998")) return "UZS";
+        if (digits.startsWith("996")) return "KZT"; // упрощённо, можно уточнить
+        if (digits.startsWith("992")) return "USD";
+        if (digits.startsWith("374")) return "USD";
+        if (digits.startsWith("994")) return "USD";
+        return "USD";
+    }
 }

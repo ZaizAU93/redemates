@@ -14,4 +14,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     long countByStatus(UserStatus status);
     List<User> findByFirstNameContainingIgnoreCaseOrUsernameContainingIgnoreCase(String a, String b);
 
+    List<User> findByStatus(UserStatus status);
+
 }

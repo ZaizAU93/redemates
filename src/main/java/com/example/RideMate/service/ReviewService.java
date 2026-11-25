@@ -20,14 +20,18 @@ public class ReviewService {
     private final RideRequestRepository rideRequestRepository;
     private final MatchRepository matchRepository;
 
+    private final TelegramBotService telegramBotService; // Добавьте поле
+
     public ReviewService(ReviewRepository reviewRepository,
                          UserRepository userRepository,
                          RideRequestRepository rideRequestRepository,
-                         MatchRepository matchRepository) {
+                         MatchRepository matchRepository,
+                         TelegramBotService telegramBotService) { // Добавьте параметр
         this.reviewRepository = reviewRepository;
         this.userRepository = userRepository;
         this.rideRequestRepository = rideRequestRepository;
         this.matchRepository = matchRepository;
+        this.telegramBotService = telegramBotService; // Добавьте присваивание
     }
 
     /**
@@ -104,7 +108,21 @@ public class ReviewService {
             reviewed.setRating(Math.round(avg * 10) / 10.0);
             userRepository.save(reviewed);
         }
+
+
+        // 🔥 НОВОЕ: Уведомление пользователю, что ему оставили отзыв
+        if (reviewed.getChatId() != null) {
+            String stars = "⭐".repeat(rating);
+            String commentText = (comment != null && !comment.isBlank()) ? "\n«" + comment + "»" : "";
+
+            String msg = (rating >= 4)
+                    ? "🙌 " + reviewer.getFirstName() + " оставил вам отзыв: " + stars + commentText
+                    : "💬 " + reviewer.getFirstName() + " оставил вам отзыв: " + stars + commentText;
+
+            telegramBotService.sendMessage(reviewed.getChatId(), msg);
+        }
     }
+
 
     @Transactional(readOnly = true)
     public List<Review> getReviewsForUser(Long telegramId) {

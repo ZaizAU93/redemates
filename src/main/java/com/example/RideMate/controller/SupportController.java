@@ -4,7 +4,9 @@ import com.example.RideMate.entity.SupportMessage;
 import com.example.RideMate.repository.SupportMessageRepository;
 import com.example.RideMate.repository.UserRepository;
 import com.example.RideMate.service.TelegramAuthService;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -126,7 +128,7 @@ public class SupportController {
 
     private void checkAdmin(String token) {
         if (token == null || !token.equals(adminToken)) {
-            throw new RuntimeException("Неверный админ-токен");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Неверный админ-токен");
         }
     }
 

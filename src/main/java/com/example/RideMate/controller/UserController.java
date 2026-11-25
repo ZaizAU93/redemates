@@ -66,7 +66,8 @@ public class UserController {
                 vehicle != null ? vehicle.getBrand() : null,
                 vehicle != null ? vehicle.getModel() : null,
                 vehicle != null ? vehicle.getColor() : null,
-                vehicle != null ? vehicle.getSeats() : null
+                vehicle != null ? vehicle.getSeats() : null,
+                user.getCurrency() != null ? user.getCurrency() : "BYN"
         );
     }
 }

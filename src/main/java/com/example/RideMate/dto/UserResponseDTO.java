@@ -11,6 +11,7 @@ public record UserResponseDTO(
         String vehicleBrand,
         String vehicleModel,
         String vehicleColor,
-        Integer vehicleSeats
+        Integer vehicleSeats,
+        String currency
 ) {
 }

@@ -14,6 +14,7 @@ public record RideRequestResponseDTO(
         Integer availableSeats,
         String note,
         Integer timeFlexibilityMinutes,
-        String status
+        String status,
+        java.util.List<RoutePointDTO> waypoints
 ) {
 }

@@ -18,7 +18,8 @@ public record RideRequestDTO(
         LocalDateTime createdAt,
         Long acceptedMatchId,
         java.math.BigDecimal pricePerSeat,  // только для водителя, может быть null
-        Boolean hasReviewed
+        Boolean hasReviewed,
+        java.util.List<RoutePointDTO> waypoints
 
 ) {
 }
