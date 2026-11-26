@@ -180,4 +180,14 @@ public class RideRequestController {
 
         return rideRequestService.getRouteAlternativesCoords(from, wpList, to);
     }
+
+    @GetMapping("/nearby")
+    public List<RideRequestResponseDTO> getNearbyRides(
+            @RequestParam double lat,
+            @RequestParam double lon,
+            @RequestParam int radius,
+            @RequestHeader("X-Telegram-Init-Data") String initData) {
+        Long telegramId = authService.authenticate(initData);
+        return rideRequestService.findNearbyRides(lat, lon, radius, telegramId);
+    }
 }

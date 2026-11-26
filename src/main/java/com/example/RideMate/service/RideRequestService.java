@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -748,5 +749,30 @@ public class RideRequestService {
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+
+    @Transactional(readOnly = true)
+    public List<RideRequestResponseDTO> findNearbyRides(double lat, double lon, int radiusMeters, Long telegramId) {
+        User user = userRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        Point userPoint = geometryFactory.createPoint(new Coordinate(lon, lat));
+        userPoint.setSRID(4326);
+
+        // Ищем активные заявки в радиусе, исключая свою
+        List<RideRequest> nearby = rideRequestRepository.findActiveRidesNearLocation(
+                userPoint, radiusMeters, user.getId()
+        );
+
+        // 🔥 Фильтр: только противоположная роль
+        Role oppositeRole = (user.getRole() == Role.DRIVER) ? Role.PASSENGER : Role.DRIVER;
+        List<RideRequest> filtered = nearby.stream()
+                .filter(r -> r.getRole() == oppositeRole)
+                .collect(Collectors.toList());
+
+        return filtered.stream()
+                .map(r -> toDTO(r, user))
+                .collect(Collectors.toList());
     }
 }

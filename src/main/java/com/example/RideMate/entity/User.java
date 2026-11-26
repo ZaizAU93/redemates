@@ -45,4 +45,7 @@ public class User {
     @Column(length = 3)
     private String currency; // BYN, RUB, KZT, UZS, USD
 
+    @Column(name = "about_me", length = 140)
+    private String aboutMe;
+
 }

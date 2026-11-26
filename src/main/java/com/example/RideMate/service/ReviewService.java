@@ -43,10 +43,6 @@ public class ReviewService {
         RideRequest rideRequest = rideRequestRepository.findById(rideRequestId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
-        if (rideRequest.getStatus() != RideStatus.COMPLETED) {
-            throw new RuntimeException("Отзыв можно оставить только после завершения поездки");
-        }
-
         User owner = rideRequest.getUser();
         boolean isOwner = owner.getTelegramId().equals(reviewerTelegramId);
 
@@ -55,9 +51,13 @@ public class ReviewService {
             match = matchRepository.findById(rideRequest.getAcceptedMatchId()).orElse(null);
         }
 
+        // 🔥 ПРОВЕРКА ПО СТАТУСУ МАТЧА, А НЕ ЗАЯВКИ
+        // Отзыв доступен, если матч завершён (COMPLETED) или зафиксирован как NO_SHOW
         if (match == null ||
-                (match.getStatus() != MatchStatus.CONFIRMED && match.getStatus() != MatchStatus.COMPLETED)) {
-            throw new RuntimeException("Отзыв доступен только участникам подтверждённой поездки");
+                (match.getStatus() != MatchStatus.COMPLETED &&
+                        match.getStatus() != MatchStatus.NO_SHOW_PASSENGER &&
+                        match.getStatus() != MatchStatus.NO_SHOW_DRIVER)) {
+            throw new RuntimeException("Отзыв можно оставить только после завершения поездки");
         }
 
         if (isOwner) {

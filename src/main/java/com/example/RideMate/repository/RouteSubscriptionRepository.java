@@ -33,4 +33,8 @@ public interface RouteSubscriptionRepository extends JpaRepository<RouteSubscrip
     @Modifying
     @Query("DELETE FROM RouteSubscription s WHERE s.user.id = :userId AND s.id = :subscriptionId")
     int deleteByIdAndUserId(@Param("subscriptionId") Long subscriptionId, @Param("userId") Long userId);
+
+    List<RouteSubscription> findByUserId(Long userId);
+
+    List<RouteSubscription> findByUserIdAndActiveTrue(Long userId);
 }

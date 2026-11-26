@@ -4,54 +4,71 @@ import com.example.RideMate.entity.RouteSubscription;
 import com.example.RideMate.entity.User;
 import com.example.RideMate.repository.RouteSubscriptionRepository;
 import com.example.RideMate.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class RouteSubscriptionService {
 
-    private final RouteSubscriptionRepository subscriptionRepository;
+    private final RouteSubscriptionRepository repository;
     private final UserRepository userRepository;
-    private final TelegramBotService telegramBotService;
-    private final GeometryFactory geometryFactory;
+    private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+
+    public RouteSubscriptionService(RouteSubscriptionRepository repository, UserRepository userRepository) {
+        this.repository = repository;
+        this.userRepository = userRepository;
+    }
 
     @Transactional
-    public RouteSubscription create(Long telegramId, double fromLat, double fromLon,
-                                    double toLat, double toLon, Integer radiusMeters) {
+    public RouteSubscription createSubscription(Long telegramId, double fromLat, double fromLon,
+                                                double toLat, double toLon, int radiusMeters) {
         User user = userRepository.findByTelegramId(telegramId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
-        List<RouteSubscription> existing = subscriptionRepository.findByUserIdAndActive(user.getId(), true);
-        if (existing.size() >= 5) {
-            throw new RuntimeException("Максимум 5 активных подписок. Удалите одну из старых.");
+        // Проверка дубликатов: сравниваем lat/lon через getY()/getX()
+        List<RouteSubscription> existing = repository.findByUserId(user.getId());
+        boolean isDuplicate = existing.stream().anyMatch(s ->
+                Math.abs(s.getFromLocation().getY() - fromLat) < 0.0001 &&
+                        Math.abs(s.getFromLocation().getX() - fromLon) < 0.0001 &&
+                        Math.abs(s.getToLocation().getY() - toLat) < 0.0001 &&
+                        Math.abs(s.getToLocation().getX() - toLon) < 0.0001
+        );
+        if (isDuplicate) {
+            throw new RuntimeException("Вы уже подписаны на этот маршрут");
         }
 
         RouteSubscription sub = new RouteSubscription();
         sub.setUser(user);
+        // ВНИМАНИЕ: Coordinate(lon, lat) — X это долгота, Y это широта
         sub.setFromLocation(geometryFactory.createPoint(new Coordinate(fromLon, fromLat)));
         sub.setToLocation(geometryFactory.createPoint(new Coordinate(toLon, toLat)));
-        sub.setRadiusMeters(radiusMeters != null ? radiusMeters : 5000);
-        return subscriptionRepository.save(sub);
-    }
+        sub.setRadiusMeters(radiusMeters);
+        sub.setActive(true);
+        sub.setCreatedAt(LocalDateTime.now());
 
-    @Transactional
-    public void delete(Long telegramId, Long subscriptionId) {
-        User user = userRepository.findByTelegramId(telegramId)
-                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
-        subscriptionRepository.deleteByIdAndUserId(subscriptionId, user.getId());
+        return repository.save(sub);
     }
 
     @Transactional(readOnly = true)
-    public List<RouteSubscription> getMy(Long telegramId) {
+    public List<RouteSubscription> getUserSubscriptions(Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
-        return subscriptionRepository.findByUserIdAndActive(user.getId(), true);
+        return repository.findByUserIdAndActiveTrue(user.getId());
+    }
+
+    @Transactional
+    public void deleteSubscription(Long telegramId, Long subscriptionId) {
+        RouteSubscription sub = repository.findById(subscriptionId)
+                .orElseThrow(() -> new RuntimeException("Подписка не найдена"));
+        if (!sub.getUser().getTelegramId().equals(telegramId)) {
+            throw new RuntimeException("Можно удалить только свою подписку");
+        }
+        repository.delete(sub);
     }
 }

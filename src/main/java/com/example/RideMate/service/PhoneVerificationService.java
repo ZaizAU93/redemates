@@ -95,41 +95,49 @@ public class PhoneVerificationService {
 
     /** Телефон в едином формате: +375XXXXXXXXX (или любая страна, если цифр 10–15). */
 // Список поддерживаемых кодов стран (можно расширять)
-    private static final List<String> SUPPORTED_COUNTRY_CODES = List.of(
-            "375",  // 🇧🇾 Беларусь
-            "7",    // 🇷🇺 Россия / 🇰🇿 Казахстан
-            "998",  // 🇺🇿 Узбекистан
-            "996",  // 🇰🇬 Кыргызстан
-            "992",  // 🇹🇯 Таджикистан
-            "374",  // 🇦🇲 Армения
-            "994"   // 🇦🇿 Азербайджан
+    // Код страны -> количество цифр после кода (без самого кода)
+    private static final Map<String, Integer> COUNTRY_DIGITS = Map.of(
+            "375", 9,   // 🇧🇾 Беларусь: 29/25/33/44 + 7
+            "7",   10,  // 🇷🇺🇰🇿 Россия/Казахстан: 9XX XXX XX XX
+            "998", 9,   // 🇺🇿 Узбекистан
+            "996", 9,   // 🇰🇬 Кыргызстан
+            "992", 9,   // 🇹🇯 Таджикистан
+            "374", 8,   // 🇦🇲 Армения
+            "994", 9    // 🇦🇿 Азербайджан
     );
 
     private String normalizePhone(String raw) {
         if (raw == null) return null;
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) return null;
 
-        String trimmed = raw.trim();
-        // Убираем всё кроме цифр и ведущего плюса
-        String digits = trimmed.replaceAll("[^0-9]", "");
-
-        // Если пользователь ввёл без плюса — добавляем
-        if (!trimmed.startsWith("+")) {
-            digits = trimmed;
-        }
-
-        // Проверяем, начинается ли номер с одного из поддерживаемых кодов
-        for (String code : SUPPORTED_COUNTRY_CODES) {
+        // Ищем самый длинный совпадающий код страны (чтобы +7 не съел +7xx...)
+        String matchedCode = null;
+        for (String code : COUNTRY_DIGITS.keySet()) {
             if (digits.startsWith(code)) {
-                // Базовая проверка длины: код + 7-12 цифр номера
-                int minLen = code.length() + 7;
-                int maxLen = code.length() + 12;
-                if (digits.length() >= minLen && digits.length() <= maxLen) {
-                    return "+" + digits;
+                if (matchedCode == null || code.length() > matchedCode.length()) {
+                    matchedCode = code;
                 }
             }
         }
+        if (matchedCode == null) return null;
 
-        return null; // Неподдерживаемый код или некорректная длина
+        int requiredAfterCode = COUNTRY_DIGITS.get(matchedCode);
+        int actualAfterCode = digits.length() - matchedCode.length();
+
+        if (actualAfterCode != requiredAfterCode) {
+            return null; // 🔥 теперь 10 цифр для Беларуси НЕ пройдут
+        }
+
+        // Дополнительная проверка: операторский код Беларуси должен быть валидным
+        if (matchedCode.equals("375")) {
+            String operator = digits.substring(3, 5); // 29, 25, 33, 44
+            if (!List.of("29", "25", "33", "44").contains(operator)) {
+                return null;
+            }
+        }
+
+        return "+" + digits;
     }
 
     private void sendTelegramMessage(Long chatId, String text) {

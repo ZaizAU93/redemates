@@ -285,6 +285,151 @@
         /* отменяем старые фикс-правила, если они остались */
         .app-container.chat-open { padding-bottom: 0 !important; }
         .app-container.chat-open .bottom-nav { display: none !important; }
+
+        .notify-banner {
+            display: flex; align-items: center; gap: 10px;
+            margin: 0 14px 12px; padding: 12px 14px;
+            background: #fff8e1; border: 1px solid #ffe082; border-radius: 14px;
+            animation: notifySlideIn .25s ease-out;
+        }
+        .notify-banner.hidden { display: none; }
+        .notify-banner-icon { font-size: 22px; flex-shrink: 0; }
+        .notify-banner-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .notify-banner-text strong { font-size: 14px; color: #1c2333; }
+        .notify-banner-text span { font-size: 12px; color: #6b7280; line-height: 1.35; }
+        .notify-banner-btn {
+            flex-shrink: 0; padding: 8px 12px; border: none; border-radius: 10px;
+            background: var(--primary); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .notify-banner-close {
+            flex-shrink: 0; width: 28px; height: 28px; border: none; border-radius: 50%;
+            background: transparent; color: #9ca3af; font-size: 18px; cursor: pointer; line-height: 1;
+        }
+        @keyframes notifySlideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+        .sub-tabs {
+            display: flex; gap: 8px; margin: 12px 0; overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .sub-tab {
+            padding: 6px 12px; border: 1px solid var(--border); border-radius: 16px;
+            background: #fff; color: var(--text-secondary); font-size: 13px; cursor: pointer;
+            white-space: nowrap; flex-shrink: 0;
+        }
+        .sub-tab.active {
+            background: var(--primary); color: #fff; border-color: var(--primary);
+        }
+
+        .mode-switcher {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            background: #f0f2f5;
+            padding: 4px;
+            border-radius: 12px;
+        }
+        .mode-btn {
+            flex: 1;
+            padding: 10px 12px;
+            border: none;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mode-btn.active {
+            background: #fff;
+            color: var(--primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        #subscribeHint {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .radius-hint {
+            animation: fadeIn 0.3s ease-out;
+        }
+        .radius-hint strong {
+            color: var(--text-primary);
+        }
+        #subscribeRadiusChips .time-chip {
+            position: relative;
+        }
+        #subscribeRadiusChips .time-chip.active::after {
+            content: '✓';
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .profile-stats {
+            display: flex;
+            gap: 12px;
+            margin: 16px 0;
+        }
+        .stat-card {
+            flex: 1;
+            padding: 16px 12px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            text-align: center;
+            background: #fff;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: #e0e0e0;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 <body>
@@ -305,12 +450,40 @@
         </div>
     </div>
 
-    <div id="mapScreen" class="screen active">
-        <div id="mainMap"></div>
-        <div class="map-legend">
-            <span class="legend-driver">Водители</span>
-            <span class="legend-passenger">Пассажиры</span>
+    <div id="notifyBanner" class="notify-banner hidden">
+        <div class="notify-banner-icon">🔔</div>
+        <div class="notify-banner-text">
+            <strong>Уведомления выключены</strong>
+            <span>Напишите боту, и он сам пришлёт, когда появится попутчик.</span>
         </div>
+        <button class="notify-banner-btn" onclick="openBotForNotifications()">Написать боту</button>
+        <button class="notify-banner-close" onclick="dismissNotifyBanner()" aria-label="Закрыть">×</button>
+    </div>
+
+    <div id="mapScreen" class="screen active">
+        <div class="map-hint" style="background:#e3f2fd;border:1px solid #90caf9;border-radius:12px;padding:12px;margin:12px;font-size:13px;color:#1565c0;line-height:1.5;">
+            🗺️ <strong>Как пользоваться картой</strong><br>
+            • Здесь видны попутчики рядом с вами (в радиусе <span id="mapRadiusHint">10</span> км)<br>
+            • 🔵 Синие — водители, 🟢 Зелёные — пассажиры<br>
+            • Нажмите на маркер, чтобы увидеть детали и откликнуться<br>
+            • Если рядом никого нет — создайте заявку или подпишитесь на маршрут
+        </div>
+        <div id="mainMap"></div>
+        <!-- Ползунок радиуса -->
+        <div class="card" style="margin:12px;">
+            <h3>Радиус поиска</h3>
+            <div style="padding:12px;">
+                <input type="range" id="mapRadiusSlider" min="1" max="30" value="10"
+                       style="width:100%;height:6px;border-radius:3px;background:#e0e0e0;outline:none;"
+                       oninput="updateMapRadius(this.value)">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-top:8px;">
+                    <span>1 км</span>
+                    <span id="mapRadiusValue" style="font-weight:600;color:var(--primary);">10 км</span>
+                    <span>30 км</span>
+                </div>
+            </div>
+        </div>
+        <div id="mapLegend" style="display:flex;gap:16px;font-size:12px;color:var(--text-secondary);margin:8px 12px;"></div>
         <div class="card">
             <h3>Поездки рядом</h3>
             <div id="mapRideList"><div class="empty-state">Загружаем поездки рядом с вами…</div></div>
@@ -326,7 +499,24 @@
 
     <div id="createScreen" class="screen">
         <div class="screen-title">Новая заявка</div>
+
+        <!-- 🔥 НОВОЕ: Переключатель режимов -->
+        <div class="mode-switcher">
+            <button class="mode-btn active" id="modeRide" onclick="switchCreateMode('ride')">
+                📝 Создать заявку
+            </button>
+            <button class="mode-btn" id="modeSubscribe" onclick="switchCreateMode('subscribe')">
+                🔔 Подписаться
+            </button>
+        </div>
+
+        <!-- Подсказка для режима подписки (скрыта по умолчанию) -->
+        <div id="subscribeHint" class="hidden" style="background:#e3f2fd;border:1px solid #90caf9;border-radius:12px;padding:12px;margin-bottom:16px;font-size:13px;color:#1565c0;line-height:1.5;">
+            💡 <strong>Подписка ≠ заявка.</strong> Это «ожидание»: бот сам пришлёт уведомление, когда кто-то поедет по вашему маршруту. Вы не создаёте заявку, а просто мониторите направление.
+        </div>
+
         <div class="card">
+            <!-- Маршрут — всегда виден -->
             <div class="field">
                 <label>Маршрут</label>
                 <div class="route-field" onclick="openAddressPicker('from')">
@@ -343,7 +533,6 @@
                         <small>Пункт назначения</small>
                     </div>
                 </div>
-                <!-- Служебные поля: JS пишет в них, визуально скрыты -->
                 <input type="text" id="fromInput" class="hidden">
                 <input type="text" id="toInput" class="hidden">
                 <div class="selected-place hidden" id="fromSelected"></div>
@@ -361,92 +550,119 @@
                 <div class="search-results" id="waypointResults"></div>
                 <button class="btn btn-sm btn-secondary" onclick="addWaypoint()" style="margin-top:8px;">➕ Добавить точку</button>
             </div>
-            <div class="field">
-                <label>Когда выезжаем</label>
-                <div class="time-chips" id="timeChips">
-                    <span class="time-chip" onclick="setQuickTime('now')">Сейчас</span>
-                    <span class="time-chip" onclick="setQuickTime('hour')">Через час</span>
-                    <span class="time-chip" onclick="setQuickTime('morning')">Утром (9:00)</span>
-                    <span class="time-chip" onclick="setQuickTime('evening')">Вечером (19:00)</span>
-                    <span class="time-chip" onclick="setQuickTime('custom')">Своё время</span>
+
+            <!-- 🔥 Блок полей только для заявки (скрывается в режиме подписки) -->
+            <div id="rideOnlyFields">
+                <div class="field">
+                    <label>Когда выезжаем</label>
+                    <div class="time-chips" id="timeChips">
+                        <span class="time-chip" onclick="setQuickTime('now')">Сейчас</span>
+                        <span class="time-chip" onclick="setQuickTime('hour')">Через час</span>
+                        <span class="time-chip" onclick="setQuickTime('morning')">Утром (9:00)</span>
+                        <span class="time-chip" onclick="setQuickTime('evening')">Вечером (19:00)</span>
+                        <span class="time-chip" onclick="setQuickTime('custom')">Своё время</span>
+                    </div>
+                    <input type="datetime-local" id="departureTimeInput" style="margin-top:8px;" onchange="highlightChip('custom')">
                 </div>
-                <input type="datetime-local" id="departureTimeInput" style="margin-top:8px;" onchange="highlightChip('custom')">
+
+                <div class="field">
+                    <label>Радиус поиска попутчиков</label>
+                    <div class="time-chips" id="radiusChips">
+                        <span class="time-chip" data-km="1" onclick="setRadius(1)">1 км</span>
+                        <span class="time-chip" data-km="5" onclick="setRadius(5)">5 км</span>
+                        <span class="time-chip active" data-km="10" onclick="setRadius(10)">10 км</span>
+                        <span class="time-chip" data-km="30" onclick="setRadius(30)">30 км</span>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label id="seatsLabel">Количество пассажиров</label>
+                    <div class="time-chips" id="passengerCountChips">
+                        <span class="time-chip active" onclick="setPassengerCount(1, this)">1</span>
+                        <span class="time-chip" onclick="setPassengerCount(2, this)">2</span>
+                        <span class="time-chip" onclick="setPassengerCount(3, this)">3</span>
+                        <span class="time-chip" onclick="setPassengerCount(4, this)">4</span>
+                    </div>
+                    <select id="passengerCountSelect" class="hidden">
+                        <option value="1" selected>1 пассажир</option>
+                        <option value="2">2 пассажира</option>
+                        <option value="3">3 пассажира</option>
+                        <option value="4">4 пассажира</option>
+                    </select>
+                </div>
+
+                <div class="field hidden" id="availableSeatsField">
+                    <label>Свободные места</label>
+                    <div class="time-chips" id="availableSeatsChips">
+                        <span class="time-chip active" onclick="setAvailableSeats(1, this)">1</span>
+                        <span class="time-chip" onclick="setAvailableSeats(2, this)">2</span>
+                        <span class="time-chip" onclick="setAvailableSeats(3, this)">3</span>
+                        <span class="time-chip" onclick="setAvailableSeats(4, this)">4</span>
+                    </div>
+                    <select id="availableSeatsSelect" class="hidden">
+                        <option value="1" selected>1 место</option>
+                        <option value="2">2 места</option>
+                        <option value="3">3 места</option>
+                        <option value="4">4 места</option>
+                    </select>
+                </div>
+
+                <div class="field hidden" id="priceField">
+                    <label>Цена за место (BYN)</label>
+                    <div class="time-chips" id="priceChips">
+                        <span class="time-chip active" onclick="setPriceChip('free', this)">Договоримся</span>
+                        <span class="time-chip" onclick="setPriceChip('5', this)">5 BYN</span>
+                        <span class="time-chip" onclick="setPriceChip('10', this)">10 BYN</span>
+                        <span class="time-chip" onclick="setPriceChip('15', this)">15 BYN</span>
+                        <span class="time-chip" onclick="setPriceChip('custom', this)">Своя цена</span>
+                    </div>
+                    <input type="number" id="priceInput" min="0" step="1" placeholder="Цена за место" class="hidden" style="margin-top:8px;">
+                </div>
+
+                <div class="field hidden" id="timeFlexibilityField">
+                    <label>Максимальное отклонение времени</label>
+                    <select id="timeFlexibilitySelect">
+                        <option value="15">±15 минут</option>
+                        <option value="30" selected>±30 минут</option>
+                        <option value="60">±1 час</option>
+                        <option value="120">±2 часа</option>
+                    </select>
+                </div>
             </div>
-            <div class="field">
-                <label>Радиус поиска попутчиков</label>
-                <div class="time-chips" id="radiusChips">
-                    <span class="time-chip" data-km="1" onclick="setRadius(1)">1 км</span>
-                    <span class="time-chip" data-km="5" onclick="setRadius(5)">5 км</span>
-                    <span class="time-chip active" data-km="10" onclick="setRadius(10)">10 км</span>
-                    <span class="time-chip" data-km="30" onclick="setRadius(30)">30 км</span>
+            <!-- 🔥 НОВОЕ: Блок радиуса допуска для подписки (скрыт по умолчанию) -->
+            <div id="subscribeOnlyFields" class="hidden">
+                <div class="field">
+                    <label>Радиус допуска маршрута</label>
+                    <div class="time-chips" id="subscribeRadiusChips">
+                        <span class="time-chip" data-km="2" onclick="setSubscribeRadius(2)">2 км</span>
+                        <span class="time-chip active" data-km="5" onclick="setSubscribeRadius(5)">5 км</span>
+                        <span class="time-chip" data-km="10" onclick="setSubscribeRadius(10)">10 км</span>
+                        <span class="time-chip" data-km="30" onclick="setSubscribeRadius(30)">30 км</span>
+                    </div>
+                    <div class="radius-hint" id="radiusHint" style="margin-top:8px;padding:10px;background:#f8f9fa;border-radius:10px;font-size:12px;color:var(--text-secondary);line-height:1.5;">
+                        💡 <strong>Что это значит?</strong> Насколько может отличаться точка новой заявки от вашей, чтобы считаться «вашим маршрутом». Чем больше радиус — тем больше уведомлений, но часть может быть нерелевантной.
+                    </div>
                 </div>
-            </div>
-            <div class="field">
-                <label id="seatsLabel">Количество пассажиров</label>
-                <div class="time-chips" id="passengerCountChips">
-                    <span class="time-chip active" onclick="setPassengerCount(1, this)">1</span>
-                    <span class="time-chip" onclick="setPassengerCount(2, this)">2</span>
-                    <span class="time-chip" onclick="setPassengerCount(3, this)">3</span>
-                    <span class="time-chip" onclick="setPassengerCount(4, this)">4</span>
-                </div>
-                <select id="passengerCountSelect" class="hidden">
-                    <option value="1" selected>1 пассажир</option>
-                    <option value="2">2 пассажира</option>
-                    <option value="3">3 пассажира</option>
-                    <option value="4">4 пассажира</option>
-                </select>
             </div>
 
-            <div class="field hidden" id="availableSeatsField">
-                <label>Свободные места</label>
-                <div class="time-chips" id="availableSeatsChips">
-                    <span class="time-chip active" onclick="setAvailableSeats(1, this)">1</span>
-                    <span class="time-chip" onclick="setAvailableSeats(2, this)">2</span>
-                    <span class="time-chip" onclick="setAvailableSeats(3, this)">3</span>
-                    <span class="time-chip" onclick="setAvailableSeats(4, this)">4</span>
-                </div>
-                <select id="availableSeatsSelect" class="hidden">
-                    <option value="1" selected>1 место</option>
-                    <option value="2">2 места</option>
-                    <option value="3">3 места</option>
-                    <option value="4">4 места</option>
-                </select>
-
-            </div>
-            <div class="field hidden" id="priceField">
-                <label>Цена за место (BYN)</label>
-                <div class="time-chips" id="priceChips">
-                    <span class="time-chip active" onclick="setPriceChip('free', this)">Договоримся</span>
-                    <span class="time-chip" onclick="setPriceChip('5', this)">5 BYN</span>
-                    <span class="time-chip" onclick="setPriceChip('10', this)">10 BYN</span>
-                    <span class="time-chip" onclick="setPriceChip('15', this)">15 BYN</span>
-                    <span class="time-chip" onclick="setPriceChip('custom', this)">Своя цена</span>
-                </div>
-                <input type="number" id="priceInput" min="0" step="1" placeholder="Цена за место" class="hidden" style="margin-top:8px;">
-            </div>
-
-            <div class="field hidden" id="timeFlexibilityField">
-                <label>Максимальное отклонение времени</label>
-                <select id="timeFlexibilitySelect">
-                    <option value="15">±15 минут</option>
-                    <option value="30" selected>±30 минут</option>
-                    <option value="60">±1 час</option>
-                    <option value="120">±2 часа</option>
-                </select>
-            </div>
+            <!-- Комментарий — всегда виден -->
             <div class="field">
                 <label>Комментарий (необязательно)</label>
                 <input type="text" id="noteInput" placeholder="Например: могу взять с собой багаж">
             </div>
-            <button class="btn" id="createSubmitBtn" onclick="createRideRequest()">Создать и найти попутчиков</button>
-            <button class="btn btn-secondary btn-sm" onclick="showRouteAlternatives()">🛣️ Показать варианты дороги</button>
+
+            <!-- Кнопка отправки (текст меняется динамически) -->
+            <button class="btn" id="createSubmitBtn" onclick="handleCreateSubmit()">Создать и найти попутчиков</button>
+            <button class="btn btn-secondary btn-sm" id="routeAlternativesBtn" onclick="showRouteAlternatives()">🛣️ Показать варианты дороги</button>
             <div id="routeChoiceHint" class="hidden" style="font-size:13px;color:var(--text-secondary);margin-top:6px;"></div>
             <button class="btn btn-secondary hidden" id="cancelEditBtn" onclick="resetCreateForm()" style="margin-top:8px;">Отменить редактирование</button>
         </div>
+
         <div id="myRide" class="card hidden">
             <h3>Ваша активная заявка</h3>
             <p id="myRideInfo" style="margin-bottom: 12px;"></p>
         </div>
+
         <div id="matchesBlock" class="card hidden">
             <h3 style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                 Найденные попутчики
@@ -459,12 +675,17 @@
     <div id="myRidesScreen" class="screen">
         <div class="screen-title">Заявки</div>
         <div class="segment">
-            <button class="btn btn-sm" id="tabMyRides" onclick="switchRidesTab('myRides')">Мои заявки</button>
-            <button class="btn btn-sm" id="tabMyResponses" onclick="switchRidesTab('myResponses')">Мои отклики</button>
+            <button class="btn btn-sm active-tab" id="tabNow" onclick="switchRidesTab('now')">🔴 Сейчас</button>
+            <button class="btn btn-sm" id="tabHistory" onclick="switchRidesTab('history')">📜 История</button>
         </div>
-        <div id="showAllRidesBtn" style="margin-bottom:12px;">
-            <button class="btn btn-sm btn-secondary" onclick="toggleShowAllRides()">Показать все</button>
+
+        <!-- Подтабы внутри "Сейчас" -->
+        <div id="nowSubTabs" class="sub-tabs">
+            <button class="sub-tab active" data-filter="all" onclick="filterNow('all')">Все</button>
+            <button class="sub-tab" data-filter="rides" onclick="filterNow('rides')">Мои заявки</button>
+            <button class="sub-tab" data-filter="responses" onclick="filterNow('responses')">Мои отклики</button>
         </div>
+
         <div id="myRidesList" class="ride-list"></div>
         <div id="myResponsesList" class="ride-list hidden"></div>
         <div id="responsesBlock" class="card hidden">
@@ -570,33 +791,40 @@
 
 <div id="profileModal" class="modal">
     <div class="modal-content">
-        <div class="modal-header">
-            <h3>Профиль</h3>
-            <button onclick="closeProfileModal()" class="close-btn">✕</button>
-        </div>
-        <div class="profile-hero">
+        <button class="modal-close" onclick="closeProfileModal()">×</button>
+
+        <!-- Шапка профиля -->
+        <div class="profile-header">
             <div class="profile-avatar" id="profileAvatar">?</div>
-            <div class="profile-hero-info">
-                <div class="profile-hero-name" id="profileName"></div>
-                <div class="profile-hero-sub" id="profileUsername"></div>
-            </div>
-        </div>
-        <div class="profile-stats">
-            <div class="profile-stat">
-                <div class="profile-stat-num" id="profileStars">—</div>
-                <div class="profile-stat-label">Рейтинг</div>
-            </div>
-            <div class="profile-stat">
-                <div class="profile-stat-num" id="profileTripCount">0</div>
-                <div class="profile-stat-label">Поездок</div>
-            </div>
-            <div class="profile-stat">
-                <div class="profile-stat-num" id="profileRole">—</div>
-                <div class="profile-stat-label">Роль</div>
+            <div class="profile-info">
+                <h2 id="profileName">Пользователь</h2>
+                <div id="profileUsername" style="color:var(--text-secondary);font-size:14px;"></div>
             </div>
         </div>
 
-        <div class="profile-section-title">📞 Телефон</div>
+
+        <!-- Статистика -->
+        <div class="profile-stats">
+            <div class="stat-card">
+                <div class="stat-value">⭐ <span id="profileStars">—</span></div>
+                <div class="stat-label">Рейтинг</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="profileTripCount">0</div>
+                <div class="stat-label">Поездок</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="profileRole">—</div>
+                <div class="stat-label">Роль</div>
+            </div>
+        </div>
+
+        <!-- Уведомления -->
+        <div class="profile-section-title">🔔 Уведомления</div>
+        <div id="notifyStatus" style="font-size:14px; color:var(--text-secondary); margin-bottom:12px;">Загружаем…</div>
+
+        <!-- Телефон -->
+        <div class="profile-section-title">📞 Контактный номер</div>
         <div id="phoneStatus" style="font-size:14px; color:var(--text-secondary); margin-bottom:8px;">Загружаем…</div>
         <div id="phoneForm" class="hidden">
             <div style="display:flex; gap:8px; margin-bottom:8px;">
@@ -617,20 +845,63 @@
                 <input type="text" id="phoneCodeInput" inputmode="numeric" maxlength="6" placeholder="Код из сообщения бота">
                 <button class="btn btn-sm" onclick="verifyPhoneCode()" style="margin-top:8px;">Подтвердить</button>
             </div>
+            <p style="font-size:11px;color:var(--text-secondary);margin-top:8px;line-height:1.4;">
+                Этот номер увидит попутчик после подтверждения брони — чтобы связаться с вами.
+                Указывайте тот, по которому вас реально можно найти.
+            </p>
         </div>
 
+        <!-- О себе -->
+        <div class="profile-section-title" style="margin-top:16px;">✍️ О себе</div>
+        <div class="field">
+            <textarea id="aboutMe" rows="3" maxlength="140" placeholder="Коротко о себе: люблю музыку, не курю, могу помочь с багажом..." style="resize:none;"></textarea>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
+                <span id="aboutMeCounter">0</span>/140 · видят попутчики в отклике
+            </div>
+        </div>
+        <button class="btn btn-secondary" onclick="saveAboutMe()" style="margin-top:8px;">Сохранить</button>
 
+        <!-- Автомобиль (только для водителей) -->
         <div id="vehicleFields" class="hidden">
-            <div class="profile-section-title">🚗 Автомобиль</div>
-            <input type="text" id="vehicleBrand" placeholder="Марка">
-            <input type="text" id="vehicleModel" placeholder="Модель" style="margin-top:8px;">
-            <input type="text" id="vehicleColor" placeholder="Цвет" style="margin-top:8px;">
-            <input type="number" id="vehicleSeats" placeholder="Количество мест" style="margin-top:8px;">
-            <input type="text" id="vehiclePlateNumber" placeholder="Гос. номер" style="margin-top:8px;">
+            <div class="profile-section-title" style="margin-top:16px;">🚗 Автомобиль</div>
+            <div class="field">
+                <label>Марка</label>
+                <input type="text" id="vehicleBrand" placeholder="Renault">
+            </div>
+            <div class="field">
+                <label>Модель</label>
+                <input type="text" id="vehicleModel" placeholder="Scenik">
+            </div>
+            <div class="field">
+                <label>Цвет</label>
+                <input type="text" id="vehicleColor" placeholder="Серый">
+            </div>
+            <div class="field">
+                <label>Количество мест</label>
+                <input type="number" id="vehicleSeats" placeholder="4" min="1" max="8">
+            </div>
+            <div class="field">
+                <label>Гос. номер (необязательно)</label>
+                <input type="text" id="vehiclePlateNumber" placeholder="AB1234CD">
+            </div>
             <button class="btn" onclick="saveVehicle()" style="margin-top:10px;">Сохранить авто</button>
         </div>
-        <button class="btn btn-secondary" onclick="changeRoleFromProfile()" style="margin-top:12px;">Сменить роль</button>
-        <button class="btn btn-secondary" onclick="openSupportModal()" style="margin-top:8px;">💬 Обратная связь</button>
+
+        <!-- Последние отзывы -->
+        <div class="profile-section-title" style="margin-top:16px;">💬 Последние отзывы</div>
+        <div id="recentReviews" style="margin-bottom:12px;">
+            <p class="muted" style="font-size:13px;">Загружаем…</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="showAllReviews()" id="showAllReviewsBtn" style="display:none;">Показать все отзывы</button>
+    </div>
+</div>
+
+<!-- Модалка всех отзывов -->
+<div id="allReviewsModal" class="modal">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeAllReviewsModal()">×</button>
+        <h2>Все отзывы</h2>
+        <div id="allReviewsList"></div>
     </div>
 </div>
 

@@ -3,6 +3,7 @@ package com.example.RideMate.repository;
 import com.example.RideMate.entity.RideRequest;
 import com.example.RideMate.entity.RideStatus;
 import org.locationtech.jts.geom.LineString;
+import org.locationtech.jts.geom.Point;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -180,4 +181,13 @@ public interface RideRequestRepository extends JpaRepository<RideRequest, Long> 
     );
 
     List<RideRequest> findByUserIdAndStatusIn(Long userId, List<RideStatus> statuses);
+
+    @Query("SELECT r FROM RideRequest r WHERE r.status IN " +
+            "(com.example.RideMate.entity.RideStatus.ACTIVE, com.example.RideMate.entity.RideStatus.MATCHED) " +
+            "AND ST_Distance(r.fromLocation, :userPoint) <= :radius " +
+            "AND r.user.id != :excludeUserId")
+    List<RideRequest> findActiveRidesNearLocation(
+            @Param("userPoint") Point userPoint,
+            @Param("radius") int radiusMeters,
+            @Param("excludeUserId") Long excludeUserId);
 }
