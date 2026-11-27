@@ -5,6 +5,7 @@ import com.example.RideMate.dto.VehicleRequest;
 import com.example.RideMate.entity.Vehicle;
 import com.example.RideMate.service.TelegramAuthService;
 import com.example.RideMate.service.VehicleService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -27,9 +28,14 @@ public class VehicleController {
         return vehicleService.addOrUpdateVehicle(ownerTelegramId, request);
     }
 
-    @GetMapping
-    public Vehicle getMyVehicle(@RequestHeader("X-Telegram-Init-Data") String initData) {
+
+    @GetMapping("/my")
+    public ResponseEntity<?> getMyVehicle(@RequestHeader("X-Telegram-Init-Data") String initData) {
         Long telegramId = authService.authenticate(initData);
-        return vehicleService.getVehicleForUser(telegramId);
+        Vehicle vehicle = vehicleService.getVehicleForUser(telegramId);
+        if (vehicle == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(vehicle);
     }
 }

@@ -14,7 +14,7 @@ const TEST_USERS = [
 let tgInitData = tg.initData || '';
 let isTestMode = !(tg.initData && tg.initData.length > 0);
 let subscribeRadiusKm = 5
-
+let createMode = 'ride'; // 'ride' или 'subscribe'
 // Глобальная валюта пользователя (обновляется при registerUser)
 let userCurrency = 'BYN';
 
@@ -126,11 +126,16 @@ function escapeHtml(text) {
 }
 
 function showMessage(message, title = 'Информация') {
+    // В тест-режиме (браузер) tg.showPopup молча не работает → используем alert
+    if (isTestMode || !window.Telegram?.WebApp?.showPopup) {
+        alert(message);
+        return;
+    }
     try {
-        if (window.Telegram?.WebApp?.showPopup) {
-            window.Telegram.WebApp.showPopup({ title, message });
-        } else { alert(message); }
-    } catch (e) { alert(message); }
+        window.Telegram.WebApp.showPopup({ title, message });
+    } catch (e) {
+        alert(message);
+    }
 }
 
 function roleEmoji(role) { return role === 'DRIVER' ? '🚗' : '🚶'; }
@@ -206,6 +211,9 @@ function renderSectionHeader(title, count, color) {
 // ---------- Навигация ----------
 
 function switchScreen(screenId) {
+    if (!['profileScreen', 'responsesScreen'].includes(screenId)) {
+        document.querySelector('.app-container').classList.remove('hide-header');
+    }
 
     if (screenId !== 'chatsScreen') {
         document.querySelector('.app-container').classList.remove('chat-open');
@@ -219,11 +227,15 @@ function switchScreen(screenId) {
     if (navItem) navItem.classList.add('active');
     if (screenId === 'mapScreen') { setTimeout(initMainMap, 100); loadSubscriptions(); }
     if (screenId === 'createScreen') onOpenCreateScreen();
-    if (screenId === 'myRidesScreen') switchRidesTab(currentRidesTab);
+   // if (screenId === 'myRidesScreen') switchRidesTab(currentRidesView);
     if (screenId === 'chatsScreen') {
         loadChats();
         document.getElementById('chatWindow').classList.add('hidden');
         document.getElementById('chatsListCard').classList.remove('hidden');
+    }
+    if (screenId === 'myRidesScreen') {
+        document.getElementById('responsesScreen')?.classList.remove('active');
+        switchRidesTab(currentRidesView);
     }
 }
 
@@ -365,12 +377,20 @@ function initMainMap() {
             L.DomEvent.on(btn, 'click', function (e) {
                 L.DomEvent.stop(e);
                 if (userLocation) {
-                    // Если позиция уже была получена раньше — используем её
                     updateUserMarker(userLocation.lat, userLocation.lon, 50, false);
                     mainMap.setView([userLocation.lat, userLocation.lon], 12);
+                    loadNearbyRides();
+                } else {
+                    requestUserLocation().then(loc => {
+                        if (loc) {
+                            userLocation = loc;
+                            updateUserMarker(loc.lat, loc.lon, 50, true);
+                            loadNearbyRides();
+                        } else {
+                            showMessage('Не удалось получить местоположение', 'Ошибка');
+                        }
+                    });
                 }
-// Если позиции нет — карта покажет дефолтный центр (Минск), пользователь сам нажмёт 📍
-                loadNearbyRides();
             });
             return btn;
         }
@@ -387,36 +407,30 @@ function initMainMap() {
 }
 
 async function loadNearbyRides() {
+    const list = document.getElementById('mapRideList');
     if (!userLocation) {
-        document.getElementById('nearbyRidesList').innerHTML =
-            '<p class="muted" style="text-align:center;padding:12px;">📍 Геолокация не определена. Разрешите доступ к местоположению.</p>';
+        if (list) list.innerHTML = '<p class="muted" style="text-align:center;padding:12px;">📍 Геолокация не определена. Нажмите 📍 на карте.</p>';
         return;
     }
-
     const radius = searchRadiusKm * 1000;
     const resp = await fetch(`/api/rides/nearby?lat=${userLocation.lat}&lon=${userLocation.lon}&radius=${radius}`, {
         headers: { 'X-Telegram-Init-Data': tgInitData }
     });
-
     if (!resp.ok) {
-        document.getElementById('nearbyRidesList').innerHTML =
-            '<p class="muted" style="text-align:center;padding:12px;">❌ Не удалось загрузить поездки</p>';
+        console.warn('Не удалось загрузить поездки рядом:', resp.status);
+        if (list) list.innerHTML = '<p class="muted" style="text-align:center;padding:12px;">❌ Не удалось загрузить поездки</p>';
         return;
     }
-
     const rides = await resp.json();
-    const list = document.getElementById('nearbyRidesList');
 
-    // 🔥 Проверка: если элемента нет, просто рисуем маркеры и выходим
-    if (!list) {
-        drawRideMarkers(rides);
-        return;
-    }
+    // Маркеры рисуем ВСЕГДА
+    drawRideMarkers(rides);
 
+    if (!list) return; // списка в HTML нет — ограничиваемся маркерами
     list.innerHTML = '';
 
-    // Обновляем подсказку с актуальным радиусом
-    document.getElementById('mapRadiusHint').textContent = searchRadiusKm;
+    const hint = document.getElementById('mapRadiusHint');
+    if (hint) hint.textContent = searchRadiusKm;
 
     if (rides.length === 0) {
         list.innerHTML = `
@@ -424,81 +438,36 @@ async function loadNearbyRides() {
                 <div style="font-size:48px;margin-bottom:12px;">🔍</div>
                 <div style="font-weight:600;margin-bottom:8px;">Рядом никого нет</div>
                 <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">
-                    В радиусе ${searchRadiusKm} км нет активных заявок.<br>
-                    Создайте свою или подпишитесь на маршрут — мы уведомим, когда появится попутчик.
+                    В радиусе ${searchRadiusKm} км нет активных попутчиков.<br>
+                    Создайте заявку или подпишитесь на маршрут.
                 </div>
                 <button class="btn btn-sm" style="margin-top:12px;" onclick="switchScreen('createScreen')">Создать заявку</button>
-            </div>
-        `;
+            </div>`;
         return;
     }
 
-    // Рисуем маркеры на карте
-    rides.forEach(ride => {
-        const color = ride.role === 'DRIVER' ? '#2196F3' : '#4CAF50';
-        const marker = L.circleMarker([ride.fromLat, ride.fromLon], {
-            radius: 10,
-            color: color,
-            fillColor: color,
-            fillOpacity: 0.7,
-            weight: 2
-        }).addTo(mainMap);
-
-        // 🔥 Карточка при клике на маркер
-        const popupContent = `
-            <div style="min-width:200px;">
-                <div style="font-weight:600;margin-bottom:8px;">
-                    ${ride.role === 'DRIVER' ? '🚗 Водитель' : '🚶 Пассажир'}
-                </div>
-                <div style="font-size:13px;margin-bottom:4px;">
-                    <strong>Маршрут:</strong><br>
-                    ${ride.fromAddress || `${ride.fromLat.toFixed(4)}, ${ride.fromLon.toFixed(4)}`} → 
-                    ${ride.toAddress || `${ride.toLat.toFixed(4)}, ${ride.toLon.toFixed(4)}`}
-                </div>
-                <div style="font-size:13px;margin-bottom:4px;">
-                    <strong>Время:</strong> ${new Date(ride.departureTime).toLocaleString('ru-RU')}
-                </div>
-                <div style="font-size:13px;margin-bottom:12px;">
-                    <strong>Мест:</strong> ${ride.availableSeats || ride.passengerCount || '?'}
-                </div>
-                <button class="btn btn-sm" style="width:100%;" onclick="respondToRideFromMap(${ride.id})">
-                    Откликнуться
-                </button>
-            </div>
-        `;
-
-        marker.bindPopup(popupContent);
-    });
-
-    // Список под картой
     rides.forEach(ride => {
         const item = document.createElement('div');
         item.style.cssText = 'padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;';
         item.onclick = () => {
             mainMap.flyTo([ride.fromLat, ride.fromLon], 14);
-            // Открыть попап маркера
-            mainMap.eachLayer(layer => {
-                if (layer.getLatLng && layer.getLatLng().lat === ride.fromLat && layer.getLatLng().lng === ride.fromLon) {
-                    layer.openPopup();
-                }
+            const m = rideMarkers.find(mk => {
+                const ll = mk.getLatLng();
+                return ll.lat === ride.fromLat && ll.lng === ride.fromLon;
             });
+            if (m) m.openPopup();
         };
-
         const roleIcon = ride.role === 'DRIVER' ? '🚗' : '🚶';
-        const timeStr = new Date(ride.departureTime).toLocaleString('ru-RU');
-
+        const timeStr = ride.departureTime ? new Date(ride.departureTime).toLocaleString('ru-RU') : '—';
         item.innerHTML = `
-            <div style="font-weight:600;margin-bottom:4px;">
-                ${roleIcon} ${ride.role === 'DRIVER' ? 'Водитель' : 'Пассажир'}
-            </div>
+            <div style="font-weight:600;margin-bottom:4px;">${roleIcon} ${ride.role === 'DRIVER' ? 'Водитель' : 'Пассажир'}</div>
             <div style="font-size:13px;margin-bottom:4px;">
                 ${ride.fromAddress || `${ride.fromLat.toFixed(4)}, ${ride.fromLon.toFixed(4)}`} → 
                 ${ride.toAddress || `${ride.toLat.toFixed(4)}, ${ride.toLon.toFixed(4)}`}
             </div>
             <div style="font-size:12px;color:var(--text-secondary);">
                 🕒 ${timeStr} · Мест: ${ride.availableSeats || ride.passengerCount || '?'}
-            </div>
-        `;
+            </div>`;
         list.appendChild(item);
     });
 }
@@ -909,33 +878,27 @@ async function createRideRequest() {
         editingRideId = null;
         document.getElementById('cancelEditBtn').classList.add('hidden');
         document.getElementById('createSubmitBtn').textContent = 'Создать и найти попутчиков';
-        document.getElementById('myRide').classList.remove('hidden');
-        renderMyRideInfo(selectedFrom.displayName, selectedTo.displayName, departureTime,
-            currentUser.role, availableSeats, pricePerSeat, timeFlexibility, passengerCount, note);
+
+        // 🔥 Компактный баннер вместо раздутой карточки
+        loadActiveRide();
+
+        // 🔥 Попутчики — только если реально есть
         searchMatches(
             selectedFrom.latitude, selectedFrom.longitude,
             selectedTo.latitude, selectedTo.longitude,
             departureTime, timeFlexibility, searchRadiusKm * 1000
         );
-        // Убираем линии вариантов дороги — выбор сделан и сохранён
+
         clearAltRoutes();
         loadNearbyRides();
-        showNotifyBanner();
-        loadActiveRide();
+
+        // 🔥 Тост вместо старого баннера
+        showToast('✅ Заявка создана. Уведомим, когда появится попутчик.', 'ok');
     } else {
         showMessage(await resp.text(), 'Ошибка');
     }
 }
 
-
-function renderMyRideInfo(fromName, toName, departureTime, role, availableSeats, pricePerSeat, timeFlexibility, passengerCount, note) {
-    document.getElementById('myRideInfo').innerHTML = `
-        <strong>Маршрут:</strong> ${escapeHtml(fromName)} → ${escapeHtml(toName)}<br>
-        <strong>Время:</strong> ${escapeHtml(new Date(departureTime).toLocaleString())}
-        ${role === 'DRIVER' ? `<br><strong>Мест:</strong> ${availableSeats}${pricePerSeat ? ` · ${pricePerSeat} BYN/место` : ''} · ±${timeFlexibility} мин` : `<br><strong>Пассажиров:</strong> ${passengerCount}`}
-        ${note ? `<br><strong>Комментарий:</strong> ${escapeHtml(note)}` : ''}
-    `;
-}
 
 async function searchMatches(fromLat, fromLon, toLat, toLon, departureTime = null, flexibilityMinutes = 30, radius = 5000) {
     const listEl = document.getElementById('matchesList');
@@ -945,12 +908,12 @@ async function searchMatches(fromLat, fromLon, toLat, toLon, departureTime = nul
     if (departureTime) url += `&departureTime=${encodeURIComponent(departureTime)}`;
     const resp = await fetch(url, { headers: { 'X-Telegram-Init-Data': tgInitData } });
     const matches = await resp.json();
-    containerEl.classList.remove('hidden');
     listEl.innerHTML = '';
     if (matches.length === 0) {
-        listEl.innerHTML = '<p>Пока нет подходящих попутчиков. Заявка активна — уведомим, когда кто-то появится. Попробуйте увеличить радиус.</p>';
+        containerEl.classList.add('hidden'); // не показываем пустой блок
         return;
     }
+    containerEl.classList.remove('hidden');
     matches.forEach(match => {
         const card = document.createElement('div');
         card.className = 'match-item';
@@ -1047,64 +1010,37 @@ async function loadActiveRide() {
     const resp = await fetch('/api/rides/my?status=ACTIVE', { headers: { 'X-Telegram-Init-Data': tgInitData } });
     if (!resp.ok) return;
     const rides = await resp.json();
-    const block = document.getElementById('myRide');
+    const banner = document.getElementById('activeRideBanner');
+    if (!banner) return;
+
     if (rides.length === 0) {
-        if (!editingRideId) block.classList.add('hidden');
+        if (!editingRideId) banner.classList.add('hidden');
         return;
     }
+
     const ride = rides[0];
     currentRideId = ride.id;
-
     window.activeRideDepartureTime = ride.departureTime || null;
     window.activeRideFlexibility = ride.timeFlexibilityMinutes || 30;
     window.activeRideFrom = { latitude: ride.fromLat, longitude: ride.fromLon };
     window.activeRideTo = { latitude: ride.toLat, longitude: ride.toLon };
 
-
-
-    block.classList.remove('hidden');
-    const timeStr = ride.departureTime ? new Date(ride.departureTime).toLocaleString() : 'время не указано';
-    let waypointsStr = '';
-    if (ride.waypoints && ride.waypoints.length > 0) {
-        const wpNames = ride.waypoints.map(w => w.name || 'Точка').join(', ');
-        waypointsStr = `<br><strong>Заезд через:</strong> 📍 ${escapeHtml(wpNames)}`;
-    }
-
-    document.getElementById('myRideInfo').innerHTML = `
-        <strong>${ride.role === 'DRIVER' ? '🚗 Водитель' : '🚶 Пассажир'}</strong><br>
-        <strong>Маршрут:</strong> (${ride.fromLat.toFixed(4)}, ${ride.fromLon.toFixed(4)}) → (${ride.toLat.toFixed(4)}, ${ride.toLon.toFixed(4)})
-        ${waypointsStr}
-        <br><strong>Время:</strong> ${escapeHtml(timeStr)} · ±${ride.timeFlexibilityMinutes} мин
-        ${ride.pricePerSeat ? ` · 💰 ${ride.pricePerSeat} BYN/место` : ''}
-        ${ride.note ? `<br><strong>Комментарий:</strong> ${escapeHtml(ride.note)}` : ''}
-    `;
-    document.getElementById('myRideInfo').innerHTML +=
-        '<p style="font-size:13px;color:var(--text-secondary);margin-top:8px;">Отклики на эту заявку приходят во вкладку «Заявки» → кнопка «Отклики».</p>';
-    if (pendingResponsesCount > 0) {
-        document.getElementById('myRideInfo').innerHTML +=
-            `<p style="font-size:13px;color:#f57f17;font-weight:600;margin-top:4px;">🔔 Новых откликов: ${pendingResponsesCount} — смотрите «Заявки» → «Отклики»</p>`;
-    }
-    // Блок действий — редактирование большое и заметное, отмена маленькая и второстепенная
-    const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);';
-
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn';  // Большая кнопка на всю ширину
-    editBtn.textContent = '✏️ Редактировать заявку';
-    editBtn.style.cssText = 'background:var(--primary);font-size:15px;padding:14px;';
-    editBtn.onclick = () => startEditRide(ride);
-    actions.appendChild(editBtn);
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-sm btn-secondary';  // Маленькая, второстепенная
-    cancelBtn.textContent = 'Отменить заявку';
-    cancelBtn.style.cssText = 'align-self:flex-start;font-size:13px;padding:8px 16px;color:var(--danger);background:transparent;border:1px solid var(--danger);';
-    cancelBtn.onclick = cancelMyRide;
-    actions.appendChild(cancelBtn);
-
-    document.getElementById('myRideInfo').appendChild(actions);
+    // Одна строка: маршрут + время
+    banner.classList.remove('hidden');
+    document.getElementById('activeRideTitle').textContent =
+        ride.role === 'DRIVER' ? '🚗 Водитель · активна' : '🚶 Пассажир · активна';
+    document.getElementById('activeRideRoute').textContent =
+        `${ride.fromLat.toFixed(3)}, ${ride.fromLon.toFixed(3)} → ${ride.toLat.toFixed(3)}, ${ride.toLon.toFixed(3)}`
+        + (ride.departureTime ? ` · ${new Date(ride.departureTime).toLocaleString('ru-RU', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}` : '');
 
     drawMyRoute();
+}
+
+function editActiveRide() {
+    const resp = fetch('/api/rides/my?status=ACTIVE', { headers: { 'X-Telegram-Init-Data': tgInitData } });
+    resp.then(r => r.json()).then(rides => {
+        if (rides[0]) startEditRide(rides[0]);
+    });
 }
 
 
@@ -1197,9 +1133,15 @@ let currentNowFilter = 'all'; // 'all', 'rides', 'responses'
 
 function switchRidesTab(view) {
     currentRidesView = view;
-    document.getElementById('tabNow').classList.toggle('active-tab', view === 'now');
-    document.getElementById('tabHistory').classList.toggle('active-tab', view === 'history');
-    document.getElementById('nowSubTabs').classList.toggle('hidden', view !== 'now');
+
+    // Безопасное переключение вкладок с проверкой существования элементов
+    const tabNow = document.getElementById('tabNow');
+    const tabHistory = document.getElementById('tabHistory');
+    const nowSubTabs = document.getElementById('nowSubTabs');
+
+    if (tabNow) tabNow.classList.toggle('active-tab', view === 'now');
+    if (tabHistory) tabHistory.classList.toggle('active-tab', view === 'history');
+    if (nowSubTabs) nowSubTabs.classList.toggle('hidden', view !== 'now');
 
     if (view === 'now') {
         loadNowView();
@@ -1208,19 +1150,10 @@ function switchRidesTab(view) {
     }
 }
 
-function filterNow(filter) {
-    currentNowFilter = filter;
-    document.querySelectorAll('#nowSubTabs .sub-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.filter === filter);
-    });
-    loadNowView();
-}
 
 async function loadNowView() {
     const list = document.getElementById('myRidesList');
-    const responsesList = document.getElementById('myResponsesList');
     list.innerHTML = '';
-    responsesList.innerHTML = '';
 
     const [ridesResp, matchesResp] = await Promise.all([
         fetch('/api/rides/my', { headers: { 'X-Telegram-Init-Data': tgInitData } }),
@@ -1235,78 +1168,242 @@ async function loadNowView() {
         m.status === 'PENDING' || m.status === 'CONFIRMING' || m.status === 'CONFIRMED'
     );
 
-    const wantRides = currentNowFilter === 'all' || currentNowFilter === 'rides';
-    const wantResponses = currentNowFilter === 'all' || currentNowFilter === 'responses';
-
-    // Режим "Все": если оба списка пусты — одно общее сообщение
-    if (currentNowFilter === 'all' && activeRides.length === 0 && activeMatches.length === 0) {
-        list.innerHTML = '<p class="muted" style="text-align:center;padding:24px;">🎉 Нет ничего активного. Создайте заявку или откликнитесь.</p>';
-        responsesList.innerHTML = '';
-        list.classList.remove('hidden');
-        responsesList.classList.add('hidden');
+    // Если ничего нет — одно сообщение
+    if (activeRides.length === 0 && activeMatches.length === 0) {
+        list.innerHTML = '<p class="muted" style="text-align:center;padding:24px;">🎉 Нет активных поездок. Создайте заявку или откликнитесь.</p>';
         return;
     }
 
-    // Заявки
-    if (wantRides) {
-        if (activeRides.length === 0) {
-            list.innerHTML = '<p class="muted" style="text-align:center;padding:20px;">🎉 Нет активных заявок</p>';
+    // Собираем всё в один массив с метками
+    const items = [
+        ...activeRides.map(r => ({ type: 'ride', data: r })),
+        ...activeMatches.map(m => ({ type: 'match', data: m }))
+    ];
+
+    // Сортировка: сначала подтверждённые, потом ожидающие
+    items.sort((a, b) => {
+        const priority = { CONFIRMED: 0, MATCHED: 1, CONFIRMING: 2, PENDING: 3, ACTIVE: 4 };
+        const aStatus = a.type === 'ride' ? a.data.status : a.data.status;
+        const bStatus = b.type === 'ride' ? b.data.status : b.data.status;
+        return (priority[aStatus] || 99) - (priority[bStatus] || 99);
+    });
+
+    // Рендерим
+    items.forEach(item => {
+        if (item.type === 'ride') {
+            list.appendChild(renderRideCardUnified(item.data));
         } else {
-            activeRides.forEach(ride => list.appendChild(renderRideCard(ride)));
+            list.appendChild(renderMatchCardUnified(item.data));
         }
+    });
+}
+
+// Карточка заявки (я водитель)
+function renderRideCardUnified(ride) {
+    const card = document.createElement('div');
+    card.className = 'ride-card';
+    card.style.cssText = `border-left: 4px solid ${STATUS_COLORS[ride.status] || '#9E9E9E'};`;
+
+    const timeStr = ride.departureTime ? new Date(ride.departureTime).toLocaleString() : 'Время не указано';
+    const seatsInfo = ride.availableSeats ? ` · мест: ${ride.availableSeats}` : '';
+
+    card.innerHTML = `
+        <div class="ride-header">
+            <span class="role-icon">🚗</span>
+            <span class="role-name">Я ищу попутчиков</span>
+            <span class="status-badge ${ride.status.toLowerCase()}">${escapeHtml(translateRideStatus(ride.status))}</span>
+        </div>
+        <div class="details" style="font-weight:600; margin: 6px 0; font-size: 13px;">
+            <span id="ride_${ride.id}_from">📍 Загрузка...</span> → <span id="ride_${ride.id}_to">📍 Загрузка...</span>
+        </div>
+        <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsInfo)}</div>
+        <div class="actions"></div>
+    `;
+
+    reverseGeocodeShort(ride.fromLat, ride.fromLon).then(addr => {
+        const el = document.getElementById(`ride_${ride.id}_from`);
+        if (el) el.textContent = addr;
+    });
+    reverseGeocodeShort(ride.toLat, ride.toLon).then(addr => {
+        const el = document.getElementById(`ride_${ride.id}_to`);
+        if (el) el.textContent = addr;
+    });
+
+    const actions = card.querySelector('.actions');
+
+    if (ride.status === 'ACTIVE') {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm';
+        editBtn.textContent = '✏️ Изменить';
+        editBtn.onclick = () => startEditRide(ride);
+        actions.appendChild(editBtn);
+
+        const responsesBtn = document.createElement('button');
+        responsesBtn.className = 'btn btn-sm btn-secondary';
+        responsesBtn.textContent = pendingResponsesCount > 0 ? `Отклики (${pendingResponsesCount})` : 'Отклики';
+        responsesBtn.onclick = () => openResponsesForRide(ride.id);
+        actions.appendChild(responsesBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-sm btn-secondary';
+        cancelBtn.textContent = 'Отменить';
+        cancelBtn.onclick = async () => {
+            if (confirm('Отменить поездку?')) {
+                await fetch(`/api/rides/${ride.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                loadNowView();
+            }
+        };
+        actions.appendChild(cancelBtn);
+    } else if (ride.status === 'MATCHED') {
+        const chatBtn = document.createElement('button');
+        chatBtn.className = 'btn btn-sm';
+        chatBtn.textContent = '💬 Чат';
+        chatBtn.onclick = () => { switchScreen('chatsScreen'); openChat(ride.acceptedMatchId); };
+        actions.appendChild(chatBtn);
+
+        const responsesBtn = document.createElement('button');
+        responsesBtn.className = 'btn btn-sm btn-secondary';
+        responsesBtn.textContent = 'Отклики';
+        responsesBtn.onclick = () => openResponsesForRide(ride.id);
+        actions.appendChild(responsesBtn);
     }
 
-    // Отклики
-    if (wantResponses) {
-        if (activeMatches.length === 0) {
-            responsesList.innerHTML = '<p class="muted" style="text-align:center;padding:20px;">🎉 Нет активных откликов</p>';
-        } else {
-            activeMatches.forEach(match => responsesList.appendChild(renderResponseCard(match)));
-        }
+    return card;
+}
+
+// Карточка отклика (я пассажир)
+function renderMatchCardUnified(match) {
+    const card = document.createElement('div');
+    card.className = 'ride-card';
+    card.style.cssText = `border-left: 4px solid ${STATUS_COLORS[match.status] || '#9E9E9E'};`;
+
+    const timeStr = match.departureTime ? new Date(match.departureTime).toLocaleString() : 'Время не указано';
+    const seatsStr = match.seats ? ` · мест: ${match.seats}` : '';
+
+    let statusText = '';
+    if (match.status === 'PENDING') statusText = '⏳ Жду ответа';
+    else if (match.status === 'CONFIRMING') statusText = '⏳ Ждёт подтверждения';
+    else if (match.status === 'CONFIRMED') statusText = '✅ Еду';
+
+    card.innerHTML = `
+        <div class="ride-header">
+            <span class="role-icon">🚶</span>
+            <span class="role-name">${statusText} · ${escapeHtml(match.ownerName)}</span>
+        </div>
+        <div class="details" style="font-weight:600; margin: 6px 0; font-size: 13px;">
+            <span id="match_${match.id}_from">📍 Загрузка...</span> → <span id="match_${match.id}_to">📍 Загрузка...</span>
+        </div>
+        <div class="time">${escapeHtml(timeStr)}${escapeHtml(seatsStr)}</div>
+        <div class="actions"></div>
+    `;
+
+    reverseGeocodeShort(match.fromLat, match.fromLon).then(addr => {
+        const el = document.getElementById(`match_${match.id}_from`);
+        if (el) el.textContent = addr;
+    });
+    reverseGeocodeShort(match.toLat, match.toLon).then(addr => {
+        const el = document.getElementById(`match_${match.id}_to`);
+        if (el) el.textContent = addr;
+    });
+
+    const actions = card.querySelector('.actions');
+
+    if (match.status === 'PENDING') {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-sm btn-secondary';
+        cancelBtn.textContent = 'Отменить отклик';
+        cancelBtn.onclick = async () => {
+            await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+            loadNowView();
+        };
+        actions.appendChild(cancelBtn);
+    } else if (match.status === 'CONFIRMING') {
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'btn btn-sm';
+        confirmBtn.textContent = '✅ Подтвердить';
+        confirmBtn.onclick = async () => {
+            await fetch(`/api/matches/${match.id}/confirm`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+            loadNowView();
+        };
+        actions.appendChild(confirmBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-sm btn-secondary';
+        cancelBtn.textContent = 'Отменить';
+        cancelBtn.onclick = async () => {
+            if (confirm('Отменить бронь?')) {
+                await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                loadNowView();
+            }
+        };
+        actions.appendChild(cancelBtn);
+    } else if (match.status === 'CONFIRMED') {
+        const chatBtn = document.createElement('button');
+        chatBtn.className = 'btn btn-sm';
+        chatBtn.textContent = '💬 Чат';
+        chatBtn.onclick = () => { switchScreen('chatsScreen'); openChat(match.id, match.ownerName); };
+        actions.appendChild(chatBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-sm btn-secondary';
+        cancelBtn.textContent = 'Отменить';
+        cancelBtn.onclick = async () => {
+            if (confirm('Отменить поездку?')) {
+                await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+                loadNowView();
+            }
+        };
+        actions.appendChild(cancelBtn);
     }
 
-    // В режиме "Все" скрываем пустую секцию, чтобы не было двойных "нет"
-    if (currentNowFilter === 'all') {
-        list.classList.toggle('hidden', activeRides.length === 0);
-        responsesList.classList.toggle('hidden', activeMatches.length === 0);
-    } else {
-        list.classList.toggle('hidden', !wantRides);
-        responsesList.classList.toggle('hidden', !wantResponses);
-    }
+    return card;
 }
 
 async function loadHistoryView() {
     const list = document.getElementById('myRidesList');
+    if (!list) return;
     list.innerHTML = '';
 
-    const resp = await fetch('/api/rides/my?all=true', { headers: { 'X-Telegram-Init-Data': tgInitData } });
-    if (!resp.ok) return;
-    const rides = await resp.json();
+    const [ridesResp, matchesResp] = await Promise.all([
+        fetch('/api/rides/my?all=true', { headers: { 'X-Telegram-Init-Data': tgInitData } }),
+        fetch('/api/matches/my', { headers: { 'X-Telegram-Init-Data': tgInitData } })
+    ]);
 
-    // Группируем по неделям
-    const weeks = {};
-    rides.forEach(ride => {
-        const date = new Date(ride.departureTime || ride.createdAt);
-        const weekStart = getWeekStart(date);
-        const key = weekStart.toISOString().split('T')[0];
-        if (!weeks[key]) weeks[key] = [];
-        weeks[key].push(ride);
-    });
+    const rides = ridesResp.ok ? await ridesResp.json() : [];
+    const allMatches = matchesResp.ok ? await matchesResp.json() : [];
+    const doneMatches = allMatches.filter(m =>
+        ['COMPLETED', 'NO_SHOW_PASSENGER', 'NO_SHOW_DRIVER'].includes(m.status)
+    );
 
-    // Сортируем недели: новые сверху
-    const sortedWeeks = Object.keys(weeks).sort((a, b) => new Date(b) - new Date(a));
+    // Единый поток событий: заявки + завершённые отклики
+    const events = [
+        ...rides.map(r => ({ kind: 'ride',  date: new Date(r.departureTime || r.createdAt || 0), data: r })),
+        ...doneMatches.map(m => ({ kind: 'match', date: new Date(m.departureTime || m.createdAt || 0), data: m }))
+    ];
 
-    if (sortedWeeks.length === 0) {
+    if (events.length === 0) {
         list.innerHTML = '<p class="muted" style="text-align:center;padding:20px;">История пуста</p>';
         return;
     }
 
-    sortedWeeks.forEach(weekKey => {
-        const weekRides = weeks[weekKey];
-        const weekLabel = formatWeekLabel(weekKey);
+    // Группировка по неделям
+    const weeks = {};
+    events.forEach(ev => {
+        const key = getWeekStart(ev.date).toISOString().split('T')[0];
+        if (!weeks[key]) weeks[key] = [];
+        weeks[key].push(ev);
+    });
 
-        list.innerHTML += `<h3 style="margin:16px 0 8px;font-size:14px;color:var(--text-secondary);font-weight:600;">${weekLabel}</h3>`;
-        weekRides.forEach(ride => list.appendChild(renderRideCard(ride)));
+    // Недели: новые сверху
+    const sortedWeeks = Object.keys(weeks).sort((a, b) => new Date(b) - new Date(a));
+
+    sortedWeeks.forEach(weekKey => {
+        // Внутри недели — по дате по убыванию (заявки и отклики вместе)
+        const weekEvents = weeks[weekKey].sort((a, b) => b.date - a.date);
+        list.innerHTML += `<h3 style="margin:16px 0 8px;font-size:14px;color:var(--text-secondary);font-weight:600;">${formatWeekLabel(weekKey)}</h3>`;
+        weekEvents.forEach(ev => {
+            list.appendChild(ev.kind === 'ride' ? renderRideCard(ev.data) : renderResponseCard(ev.data));
+        });
     });
 }
 
@@ -1433,13 +1530,13 @@ function renderRideCard(ride) {
         const responsesBtn = document.createElement('button');
         responsesBtn.className = 'btn btn-sm';
         responsesBtn.textContent = pendingResponsesCount > 0 ? `Отклики (${pendingResponsesCount}) 🔔` : 'Отклики';
-        responsesBtn.onclick = () => loadResponsesForRide(ride.id);
+        responsesBtn.onclick = () => openResponsesForRide(ride.id);
         actions.appendChild(responsesBtn);
     } else if (ride.status === 'MATCHED') {
         const responsesBtn = document.createElement('button');
         responsesBtn.className = 'btn btn-sm btn-secondary';
         responsesBtn.textContent = 'Отклики на заявку';
-        responsesBtn.onclick = () => loadResponsesForRide(ride.id);
+        responsesBtn.onclick = () => openResponsesForRide(ride.id);
         actions.appendChild(responsesBtn);
 
         if (ride.acceptedMatchId) {
@@ -1474,7 +1571,7 @@ function renderRideCard(ride) {
 
 
 
-async function loadResponsesForRide(rideId) {
+/*async function loadResponsesForRide(rideId) {
     try {
         const resp = await fetch(`/api/matches/for-request?rideRequestId=${rideId}`, {headers: {'X-Telegram-Init-Data': tgInitData}});
 
@@ -1626,6 +1723,227 @@ async function loadResponsesForRide(rideId) {
         console.error("Ошибка при загрузке откликов:", e);
         showMessage("Ошибка интерфейса: " + e.message, "Ошибка");
     }
+} */
+
+async function loadResponsesForRide(rideId) {
+    // Старый выпадающий блок удалён. Если экран откликов открыт — обновляем его.
+    if (currentResponsesRideId === rideId && typeof renderResponsesList === 'function') {
+        await renderResponsesList(rideId);
+    }
+}
+
+let currentResponsesRideId = null;
+
+// Открыть экран откликов по заявке
+async function openResponsesForRide(rideId) {
+    document.querySelector('.app-container').classList.add('hide-header');
+    console.log('🎯 Открытие откликов для заявки:', rideId);
+    currentResponsesRideId = rideId;
+
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const target = document.getElementById('responsesScreen');
+    if (target) target.classList.add('active');
+
+    await renderResponsesRideCard(rideId);
+    await renderResponsesList(rideId);
+}
+
+function closeResponsesScreen() {
+    document.querySelector('.app-container').classList.remove('hide-header');
+    currentResponsesRideId = null;
+    switchScreen('myRidesScreen');
+}
+
+async function reloadResponses() {
+    if (currentResponsesRideId) await renderResponsesList(currentResponsesRideId);
+}
+
+// Карточка заявки сверху — в стиле openRideDetails
+async function renderResponsesRideCard(rideId) {
+    const card = document.getElementById('responsesRideCard');
+    if (!card) return;            // ← защита
+    card.innerHTML = '<p class="muted">Загрузка…</p>';
+    try {
+        const resp = await fetch(`/api/rides/${rideId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!resp.ok) { card.innerHTML = '<p class="muted">Не удалось загрузить заявку</p>'; return; }
+        const d = await resp.json();
+
+        const fromId = 'rr_from_' + rideId, toId = 'rr_to_' + rideId;
+        const timeStr = d.departureTime ? new Date(d.departureTime).toLocaleString('ru-RU') : 'время не указано';
+        const seatsLine = d.role === 'DRIVER'
+            ? `Свободно мест: ${d.availableSeats ?? '—'}${d.vehicleSeats ? ` (в машине ${d.vehicleSeats})` : ''}`
+            : `Пассажиров: ${d.passengerCount ?? '—'}`;
+
+        card.innerHTML = `
+            <div class="ride-header">
+                <span class="role-icon">${roleEmoji(d.role)}</span>
+                <span class="role-name">${d.role === 'DRIVER' ? 'Водитель' : 'Пассажир'}</span>
+                <span class="status-badge ${d.status.toLowerCase()}">${escapeHtml(translateRideStatus(d.status))}</span>
+            </div>
+            <div class="responses-ride-route">
+                <span id="${fromId}">📍 …</span> → <span id="${toId}">📍 …</span>
+            </div>
+            <div class="responses-ride-meta">
+                🕒 ${escapeHtml(timeStr)} · ±${d.timeFlexibilityMinutes || 30} мин<br>
+                ${escapeHtml(seatsLine)}${d.pricePerSeat ? ` · 💰 ${d.pricePerSeat} BYN/место` : ''}<br>
+                ${d.note ? `💬 ${escapeHtml(d.note)}` : ''}
+            </div>`;
+
+        reverseGeocodeShort(d.fromLat, d.fromLon).then(a => { const e = document.getElementById(fromId); if (e) e.textContent = a; });
+        reverseGeocodeShort(d.toLat, d.toLon).then(a => { const e = document.getElementById(toId); if (e) e.textContent = a; });
+    } catch (e) {
+        card.innerHTML = '<p class="muted">Ошибка загрузки заявки</p>';
+    }
+}
+
+// Список откликов снизу
+async function renderResponsesList(rideId) {
+    const list = document.getElementById('responsesList');
+    if (!list) return;            // ← защита
+    console.log('🔍 Загружаем отклики для заявки:', rideId);
+
+    list.innerHTML = '<p class="muted">Загрузка…</p>';
+    try {
+        const resp = await fetch(`/api/matches/for-request?rideRequestId=${rideId}`, {
+            headers: { 'X-Telegram-Init-Data': tgInitData }
+        });
+        console.log('📡 Ответ сервера:', resp.status);
+        if (!resp.ok) {
+            list.innerHTML = '<p class="muted">Не удалось загрузить отклики</p>';
+            return;
+        }
+        const matches = await resp.json();
+        console.log('📦 Получено откликов:', matches.length);
+
+        if (matches.length === 0) {
+            list.innerHTML = '<p class="muted" style="text-align:center;padding:16px;">Пока никто не откликнулся. Заявка активна — уведомим, когда кто-то появится.</p>';
+            return;
+        }
+
+        matches.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        list.innerHTML = '';
+        matches.forEach(m => list.appendChild(buildResponseCard(m, rideId)));
+    } catch (e) {
+        console.error('❌ Ошибка загрузки откликов:', e);
+        list.innerHTML = '<p class="muted">Ошибка загрузки откликов</p>';
+    }
+}
+
+function buildResponseCard(match, rideId) {
+    const card = document.createElement('div');
+    card.className = 'response-card';
+    card.style.borderLeft = `4px solid ${STATUS_COLORS[match.status] || '#9E9E9E'}`;
+
+    const initial = (match.responderName || '?').trim().charAt(0).toUpperCase();
+    const ratingStr = match.responderRating ? `⭐ ${Number(match.responderRating).toFixed(1)}` : '⭐ нет оценок';
+    const tripsStr = `Поездок: ${match.responderTripCount || 0}`;
+    const seatsStr = match.seats ? `мест: ${match.seats}` : '';
+    const aboutStr = match.responderAboutMe
+        ? `<div class="peer-about">${escapeHtml(match.responderAboutMe)}</div>` : '';
+    const dateStr = new Date(match.createdAt).toLocaleString('ru-RU');
+
+    card.innerHTML = `
+        <div class="response-head">
+            <div class="response-avatar">${escapeHtml(initial)}</div>
+            <div class="response-name">${escapeHtml(match.responderName || 'Пользователь')}</div>
+            <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(translateMatchStatus(match.status))}</span>
+        </div>
+        <div class="response-meta">${ratingStr} · ${tripsStr}${seatsStr ? ' · ' + seatsStr : ''}</div>
+        ${aboutStr}
+        <div class="response-meta">Отклик: ${escapeHtml(dateStr)}</div>
+        <div class="response-actions"></div>`;
+
+    // Клик по карточке (кроме кнопок) → профиль откликнувшегося
+    card.addEventListener('click', (ev) => {
+        if (ev.target.closest('button')) return;
+        openPeerProfile(match);
+    });
+
+    const actions = card.querySelector('.response-actions');
+
+    if (match.status === 'PENDING') {
+        const acceptBtn = document.createElement('button');
+        acceptBtn.className = 'btn btn-sm';
+        acceptBtn.textContent = 'Принять';
+        acceptBtn.onclick = async () => {
+            const r = await fetch(`/api/matches/${match.id}/accept`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+            if (r.ok) showToast('Бронь принята. Ждём подтверждения от второй стороны.', 'ok');
+            else { const t = await r.text(); showToast(t.slice(0, 120), 'err'); }
+            renderResponsesList(rideId);
+        };
+        const rejectBtn = document.createElement('button');
+        rejectBtn.className = 'btn btn-sm btn-secondary';
+        rejectBtn.textContent = 'Отклонить';
+        rejectBtn.onclick = async () => {
+            await fetch(`/api/matches/${match.id}/reject`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+            renderResponsesList(rideId);
+        };
+        actions.appendChild(acceptBtn); actions.appendChild(rejectBtn);
+    }
+
+    if (match.status === 'CONFIRMING') {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-sm btn-secondary';
+        cancelBtn.textContent = 'Отменить бронь';
+        cancelBtn.onclick = async () => {
+            if (!confirm('Отменить бронь? Места вернутся в пул.')) return;
+            await fetch(`/api/matches/${match.id}/cancel`, { method: 'PUT', headers: { 'X-Telegram-Init-Data': tgInitData } });
+            renderResponsesList(rideId);
+        };
+        actions.appendChild(cancelBtn);
+    }
+
+    if (match.status === 'CONFIRMED') {
+        const chatBtn = document.createElement('button');
+        chatBtn.className = 'btn btn-sm';
+        chatBtn.textContent = '💬 Чат';
+        chatBtn.onclick = () => { switchScreen('chatsScreen'); openChat(match.id, match.responderName); };
+        const counterpart = currentUser.role === 'PASSENGER' ? 'NO_SHOW_DRIVER' : 'NO_SHOW_PASSENGER';
+        const okBtn = document.createElement('button');
+        okBtn.className = 'btn btn-sm btn-secondary';
+        okBtn.textContent = '✅ Состоялась';
+        okBtn.onclick = () => reportOutcome(match.id, 'COMPLETED');
+        const noBtn = document.createElement('button');
+        noBtn.className = 'btn btn-sm btn-secondary';
+        noBtn.textContent = counterpart === 'NO_SHOW_PASSENGER' ? '⚠️ Пасс. не пришёл' : '⚠️ Вод. не выехал';
+        noBtn.onclick = () => reportOutcome(match.id, counterpart);
+        actions.appendChild(chatBtn); actions.appendChild(okBtn); actions.appendChild(noBtn);
+    }
+
+    if (match.status === 'COMPLETED' && !match.hasReviewed) {
+        const reviewBtn = document.createElement('button');
+        reviewBtn.className = 'btn btn-sm';
+        reviewBtn.textContent = '⭐ Оставить отзыв';
+        reviewBtn.onclick = async () => {
+            const r = await fetch(`/api/reviews/counterparty/${match.rideRequestId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+            if (r.ok) openReviewModal(match.rideRequestId, Number(await r.json()));
+            else showToast(await r.text(), 'err');
+        };
+        actions.appendChild(reviewBtn);
+    }
+
+    return card;
+}
+
+// Модалка профиля откликнувшегося
+function openPeerProfile(match) {
+    document.getElementById('peerAvatar').textContent = (match.responderName || '?').trim().charAt(0).toUpperCase();
+    document.getElementById('peerName').textContent = match.responderName || 'Пользователь';
+    document.getElementById('peerUsername').textContent = match.responderUsername ? `@${match.responderUsername}` : '';
+    document.getElementById('peerRating').textContent = match.responderRating ? Number(match.responderRating).toFixed(1) : '—';
+    document.getElementById('peerTrips').textContent = match.responderTripCount || 0;
+    document.getElementById('peerSeats').textContent = match.seats || '—';
+
+    const aboutEl = document.getElementById('peerAbout');
+    if (match.responderAboutMe) { aboutEl.textContent = match.responderAboutMe; aboutEl.classList.remove('empty'); }
+    else { aboutEl.textContent = ''; aboutEl.classList.add('empty'); }
+
+    document.getElementById('peerProfileModal').classList.add('active');
+    loadUserReviews(match.responderTelegramId, document.getElementById('peerReviews'));
+}
+
+function closePeerProfile() {
+    document.getElementById('peerProfileModal').classList.remove('active');
 }
 
 async function loadMyResponses() {
@@ -1672,9 +1990,13 @@ function renderResponseCard(match) {
     const seatsNote = match.seats ? ` · мест: ${match.seats}` : '';
     const routeId = `resp_${match.id}`;
     const reviewsId = `rev_owner_${match.id}`;
-
     const ratingStr = match.ownerRating ? `⭐ ${Number(match.ownerRating).toFixed(1)}` : '⭐ Нет оценок';
-    const aboutMeStr = match.ownerAboutMe ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;font-style:italic;">"${escapeHtml(match.ownerAboutMe)}"</div>` : '';
+    const tripsStr = `Поездок: ${match.ownerTripCount || 0}`;
+    const aboutMeStr = match.ownerAboutMe
+        ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;font-style:italic;">"${escapeHtml(match.ownerAboutMe)}"</div>` : '';
+    const timeStr = match.departureTime ? new Date(match.departureTime).toLocaleString() : 'Время не указано';
+    const priceStr = match.pricePerSeat
+        ? `<div style="color:var(--primary);font-weight:600;margin-top:2px;">💰 ${match.pricePerSeat} BYN</div>` : '';
 
     item.innerHTML = `
         <div class="ride-header">
@@ -1686,19 +2008,6 @@ function renderResponseCard(match) {
             ${ratingStr} · ${tripsStr}
         </div>
         ${aboutMeStr}
-    const tripsStr = 'Поездок: ${match.ownerTripCount || 0}';
-    const timeStr = match.departureTime ? new Date(match.departureTime).toLocaleString() : 'Время не указано';
-    const priceStr = match.pricePerSeat ? '<div style="color:var(--primary);font-weight:600;margin-top:2px;">💰 ${match.pricePerSeat} BYN</div>' : '';
-
-    item.innerHTML = '
-        <div class="ride-header">
-            <span class="role-icon">👤</span>
-            <span class="role-name" style="flex:1;">Отклик на заявку ${escapeHtml(match.ownerName)}</span>
-            <span class="match-status ${match.status.toLowerCase()}">${escapeHtml(translateMatchStatus(match.status))}${escapeHtml(seatsNote)}</span>
-        </div>
-        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;">
-            ${ratingStr} · ${tripsStr}
-        </div>
         <div class="details" style="font-weight:600; margin: 6px 0; font-size:13px;">
             <span id="${routeId}_from">📍 Загрузка...</span> → <span id="${routeId}_to">📍 Загрузка...</span>
         </div>
@@ -1710,14 +2019,11 @@ function renderResponseCard(match) {
     `;
 
     reverseGeocodeShort(match.fromLat, match.fromLon).then(addr => {
-        const el = document.getElementById(`${routeId}_from`);
-        if (el) el.textContent = addr;
+        const el = document.getElementById(`${routeId}_from`); if (el) el.textContent = addr;
     });
     reverseGeocodeShort(match.toLat, match.toLon).then(addr => {
-        const el = document.getElementById(`${routeId}_to`);
-        if (el) el.textContent = addr;
+        const el = document.getElementById(`${routeId}_to`); if (el) el.textContent = addr;
     });
-
     loadUserReviews(match.ownerTelegramId, document.getElementById(reviewsId));
 
     if (match.status === 'PENDING') {
@@ -1731,7 +2037,6 @@ function renderResponseCard(match) {
         };
         item.appendChild(cancelBtn);
     }
-
     if (match.status === 'CONFIRMING') {
         const confirmBtn = document.createElement('button');
         confirmBtn.className = 'btn btn-sm';
@@ -1744,7 +2049,6 @@ function renderResponseCard(match) {
         };
         item.appendChild(confirmBtn);
     }
-
     if (match.status === 'CONFIRMED') {
         const counterpart = currentUser.role === 'PASSENGER' ? 'NO_SHOW_DRIVER' : 'NO_SHOW_PASSENGER';
         const okBtn = document.createElement('button');
@@ -1752,14 +2056,12 @@ function renderResponseCard(match) {
         okBtn.textContent = '✅ Состоялась';
         okBtn.onclick = () => reportOutcome(match.id, 'COMPLETED');
         item.appendChild(okBtn);
-
         const noBtn = document.createElement('button');
         noBtn.className = 'btn btn-sm btn-secondary';
         noBtn.textContent = counterpart === 'NO_SHOW_PASSENGER' ? '⚠️ Пассажир не пришёл' : '⚠️ Водитель не выехал';
         noBtn.onclick = () => reportOutcome(match.id, counterpart);
         item.appendChild(noBtn);
     }
-
     if (match.status === 'COMPLETED') {
         if (match.hasReviewed) {
             const reviewedText = document.createElement('div');
@@ -1778,7 +2080,6 @@ function renderResponseCard(match) {
             item.appendChild(reviewBtn);
         }
     }
-
     return item;
 }
 
@@ -2163,50 +2464,6 @@ function handleMapPoint(place) {
     closeMapModal();
 }
 
-// ---------- Детали заявки ----------
-
-async function openRideDetails(rideId) {
-    const resp = await fetch(`/api/rides/${rideId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
-    if (!resp.ok) { showMessage('Не удалось загрузить детали', 'Ошибка'); return; }
-    const d = await resp.json();
-    const body = document.getElementById('detailsBody');
-    const rows = [
-        ['Кто', `${roleEmoji(d.role)} ${escapeHtml(d.ownerName)}`],
-        ['Username', d.ownerUsername ? '@' + escapeHtml(d.ownerUsername) : 'не указан'],
-        ['Рейтинг', d.ownerRating ? `⭐ ${d.ownerRating.toFixed(1)}` : 'нет оценок'],
-        ['Поездок', d.ownerTripCount ?? 0],
-        ['Откуда', `(${d.fromLat.toFixed(4)}, ${d.fromLon.toFixed(4)})`],
-        ['Куда', `(${d.toLat.toFixed(4)}, ${d.toLon.toFixed(4)})`],
-        ['Время', d.departureTime ? new Date(d.departureTime).toLocaleString() + ` · ±${d.timeFlexibilityMinutes} мин` : 'не указано']
-    ];
-    if (d.role === 'DRIVER') {
-        rows.push(
-            ['Места', `свободно: ${d.availableSeats ?? '—'}${d.vehicleSeats ? ` (в машине: ${d.vehicleSeats})` : ''}`],
-            ['Цена', d.pricePerSeat ? `${d.pricePerSeat} BYN/место` : 'не указана'],
-            ['Авто', d.vehicleBrand ? `${escapeHtml(d.vehicleBrand)} ${escapeHtml(d.vehicleModel || '')}${d.vehicleColor ? `, ${escapeHtml(d.vehicleColor)}` : ''}` : 'не указано']
-        );
-    }
-    rows.push(['Комментарий', d.note ? escapeHtml(d.note) : '—']);
-    body.innerHTML = rows.map(([k, v]) => `<div class="details-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
-    const actions = document.getElementById('detailsActions');
-    actions.innerHTML = '';
-    if (d.isMine) {
-        actions.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">Это ваша заявка — отредактировать её можно на вкладке «Создать».</p>';
-    } else if (respondedRideIds.has(d.id)) {
-        const sent = document.createElement('button');
-        sent.className = 'btn btn-secondary';
-        sent.textContent = 'Отправлено ✓';
-        sent.disabled = true;
-        actions.appendChild(sent);
-    } else {
-        const respondBtn = document.createElement('button');
-        respondBtn.className = 'btn';
-        respondBtn.textContent = 'Откликнуться';
-        respondBtn.onclick = () => respondToRide(d.id, respondBtn, { role: d.role, availableSeats: d.availableSeats });
-        actions.appendChild(respondBtn);
-    }
-    document.getElementById('detailsModal').classList.add('active');
-}
 
 
 function closeDetailsModal() {
@@ -2251,10 +2508,19 @@ async function submitReview() {
 
 // ---------- Профиль ----------
 
-async function openProfileModal() {
-    document.getElementById('profileModal').classList.add('active');
 
-    // Заполняем данные пользователя
+async function openProfileScreen() {
+    if (!currentUser) {
+        showMessage('Пользователь не загружен. Обновите страницу.', 'Ошибка');
+        return;
+    }
+
+    document.querySelector('.app-container').classList.add('hide-header');
+    // Переключаем экран
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('profileScreen').classList.add('active');
+
+    // Заполняем данные
     document.getElementById('profileName').textContent = currentUser.firstName || 'Пользователь';
     document.getElementById('profileUsername').textContent = currentUser.username ? `@${currentUser.username}` : '';
     document.getElementById('profileAvatar').textContent = (currentUser.firstName || '?')[0].toUpperCase();
@@ -2262,103 +2528,44 @@ async function openProfileModal() {
     document.getElementById('profileTripCount').textContent = currentUser.tripCount || 0;
     document.getElementById('profileRole').textContent = currentUser.role === 'DRIVER' ? 'Водитель' : 'Пассажир';
 
+    // О себе
+    document.getElementById('aboutMeDisplay').textContent = currentUser.aboutMe || 'Не указано';
 
-    // Загружаем "О себе"
-    document.getElementById('aboutMe').value = currentUser.aboutMe || '';
-    document.getElementById('aboutMeCounter').textContent = (currentUser.aboutMe || '').length;
+    // Уведомления
+    const notifyEl = document.getElementById('notifyStatus');
+    if (currentUser.chatId) {
+        notifyEl.innerHTML = '✅ Включены — бот напишет, когда появится попутчик';
+    } else {
+        notifyEl.innerHTML = '❌ Выключены — <button class="btn btn-sm" style="margin:0;padding:6px 12px;font-size:12px;" onclick="openBotForNotifications()">Включить</button>';
+    }
 
-    // Загружаем отзывы
-    await loadRecentReviews(currentUser.telegramId);
-    // 🔥 Подгружаем данные авто
+    // Телефон
+    await loadPhoneStatus();
+
+    // Авто
     if (currentUser.role === 'DRIVER') {
-        document.getElementById('vehicleFields').classList.remove('hidden');
+        document.getElementById('vehicleSection').classList.remove('hidden');
         try {
-            const r = await fetch('/api/vehicle/my', { headers: { 'X-Telegram-Init-Data': tgInitData } });
+            const r = await fetch('/api/vehicles/my', { headers: { 'X-Telegram-Init-Data': tgInitData } });
             if (r.ok) {
                 const v = await r.json();
-                document.getElementById('vehicleBrand').value = v.brand || '';
-                document.getElementById('vehicleModel').value = v.model || '';
-                document.getElementById('vehicleColor').value = v.color || '';
-                document.getElementById('vehicleSeats').value = v.seats || '';
-                document.getElementById('vehiclePlateNumber').value = v.plateNumber || '';
+                const vehicleText = `${v.brand || ''} ${v.model || ''}, ${v.color || ''} · ${v.seats || '?'} мест${v.plateNumber ? ` · ${v.plateNumber}` : ''}`;
+                document.getElementById('vehicleDisplay').textContent = vehicleText.trim();
+            } else {
+                document.getElementById('vehicleDisplay').textContent = 'Не указан';
             }
-        } catch (e) { /* не критично */ }
+        } catch (e) {
+            document.getElementById('vehicleDisplay').textContent = 'Не удалось загрузить';
+        }
     } else {
-        document.getElementById('vehicleFields').classList.add('hidden');
+        document.getElementById('vehicleSection').classList.add('hidden');
     }
 
-    // 🔥 Подгружаем "О себе"
-    try {
-        const r = await fetch('/api/users/me', { headers: { 'X-Telegram-Init-Data': tgInitData } });
-        if (r.ok) {
-            const u = await r.json();
-            document.getElementById('aboutMe').value = u.aboutMe || '';
-            document.getElementById('aboutMeCounter').textContent = (u.aboutMe || '').length;
-        }
-    } catch (e) { /* не критично */ }
-
-    // Статус уведомлений
-    const notifyEl = document.getElementById('notifyStatus');
-    if (notifyEl) {
-        if (currentUser.chatId) {
-            notifyEl.innerHTML = '✅ Включены — бот напишет, когда появится попутчик';
-        } else {
-            notifyEl.innerHTML = '❌ Выключены — <button class="btn btn-sm" style="margin:0;padding:6px 12px;font-size:12px;" onclick="openBotForNotifications()">Включить</button>';
-        }
-    }
-}
-
-// Счётчик символов
-document.getElementById('aboutMe').addEventListener('input', function() {
-    document.getElementById('aboutMeCounter').textContent = this.value.length;
-});
-
-async function saveAboutMe() {
-    const about = document.getElementById('aboutMe').value.trim();
-    if (about.length > 140) {
-        showMessage('Максимум 140 символов', 'Ошибка');
-        return;
-    }
-    try {
-        const r = await fetch('/api/users/about', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
-            body: JSON.stringify({ aboutMe: about })
-        });
-        if (r.ok) {
-            currentUser.aboutMe = about;
-            showMessage('Описание сохранено', 'Готово');
-        } else {
-            showMessage(await r.text(), 'Ошибка');
-        }
-    } catch (e) {
-        showMessage('Сервер недоступен', 'Ошибка');
-    }
+    // Отзывы
+    await loadRecentReviewsScreen(currentUser.telegramId);
 }
 
 
-function closeProfileModal() { document.getElementById('profileModal').classList.remove('active'); }
-
-async function saveVehicle() {
-    if (!currentUser || currentUser.role !== 'DRIVER') return;
-    const brand = document.getElementById('vehicleBrand').value.trim();
-    const model = document.getElementById('vehicleModel').value.trim();
-    const color = document.getElementById('vehicleColor').value.trim();
-    const seats = parseInt(document.getElementById('vehicleSeats').value);
-    const plateNumber = document.getElementById('vehiclePlateNumber').value.trim();
-    if (!brand || !model || !seats) { showMessage('Заполните марку, модель и количество мест', 'Ошибка'); return; }
-    const resp = await fetch('/api/vehicles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
-        body: JSON.stringify({ brand, model, color, seats, plateNumber })
-    });
-    if (resp.ok) { showMessage('Автомобиль сохранён'); closeProfileModal(); registerUser(); }
-    else showMessage(await resp.text(), 'Ошибка');
-}
-
-function changeRoleFromProfile() { closeProfileModal(); document.getElementById('roleBanner').classList.remove('hidden'); }
-
-// ---------- Запуск ----------
 
 (async () => {
     if (isTestMode) {
@@ -2956,29 +3163,6 @@ function updatePricePlaceholder() {
         'USD': 'Например: 10'
     };
 
-    // Устанавливаем текст подсказки
-    input.placeholder = examples[userCurrency] || 'Цена за место';
-
-    // Опционально: меняем шаг (step) в зависимости от валюты
-    if (userCurrency === 'UZS' || userCurrency === 'KZT') {
-        input.step = '100'; // Чтобы не вводить 1500.5 сумов
-    } else {
-        input.step = '1'; // Или '0.5' для BYN/RUB, если нужны копейки
-    }
-}
-
-function updatePricePlaceholder() {
-    const input = document.getElementById('priceInput');
-    if (!input) return;
-
-    const examples = {
-        'RUB': 'Например: 500',
-        'KZT': 'Например: 2000',
-        'UZS': 'Например: 50000',
-        'BYN': 'Например: 25',
-        'USD': 'Например: 10'
-    };
-
     input.placeholder = examples[userCurrency] || 'Цена за место';
 
     // Адаптируем шаг ввода под валюту
@@ -3100,33 +3284,6 @@ async function checkChatIdSilently() {
     } catch (e) { /* тихо */ }
 }
 
-// Счётчик символов
-document.getElementById('aboutMe').addEventListener('input', function() {
-    document.getElementById('aboutMeCounter').textContent = this.value.length;
-});
-
-async function saveAboutMe() {
-    const about = document.getElementById('aboutMe').value.trim();
-    if (about.length > 140) {
-        showMessage('Максимум 140 символов', 'Ошибка');
-        return;
-    }
-    try {
-        const r = await fetch('/api/users/about', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
-            body: JSON.stringify({ aboutMe: about })
-        });
-        if (r.ok) {
-            currentUser.aboutMe = about;
-            showMessage('Описание сохранено', 'Готово');
-        } else {
-            showMessage(await r.text(), 'Ошибка');
-        }
-    } catch (e) {
-        showMessage('Сервер недоступен', 'Ошибка');
-    }
-}
 
 async function loadRecentReviews(telegramId) {
     const container = document.getElementById('recentReviews');
@@ -3150,16 +3307,16 @@ async function loadRecentReviews(telegramId) {
         // Показываем последние 3
         const recent = reviews.slice(0, 3);
         container.innerHTML = recent.map(rev => `
-            <div style="margin-bottom:10px;padding:10px;background:#f9f9f9;border-radius:8px;">
-                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">
-                    ${escapeHtml(rev.reviewerName)} · ${'⭐'.repeat(rev.rating)}
-                </div>
-                ${rev.comment ? `<div style="font-size:13px;color:var(--text-secondary);">${escapeHtml(rev.comment)}</div>` : ''}
-                <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
-                    ${new Date(rev.createdAt).toLocaleDateString('ru-RU')}
-                </div>
-            </div>
-        `).join('');
+    <div style="margin-bottom:10px;padding:10px;background:#f9f9f9;border-radius:8px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">
+            ${escapeHtml(rev.authorName || 'Пользователь')} · ${'⭐'.repeat(rev.rating || 0)}
+        </div>
+        ${rev.comment ? `<div style="font-size:13px;color:var(--text-secondary);">${escapeHtml(rev.comment)}</div>` : ''}
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
+            ${rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('ru-RU') : ''}
+        </div>
+    </div>
+`).join('');
 
         // Если отзывов больше 3 — показываем кнопку
         if (reviews.length > 3) {
@@ -3173,41 +3330,6 @@ async function loadRecentReviews(telegramId) {
     }
 }
 
-async function showAllReviews(telegramId) {
-    document.getElementById('allReviewsModal').classList.add('active');
-    const list = document.getElementById('allReviewsList');
-    list.innerHTML = '<p class="muted">Загружаем…</p>';
-
-    try {
-        const r = await fetch(`/api/reviews/user/${telegramId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
-        if (!r.ok) throw new Error();
-
-        const reviews = await r.json();
-
-        if (reviews.length === 0) {
-            list.innerHTML = '<p class="muted">Отзывов пока нет</p>';
-            return;
-        }
-
-        list.innerHTML = reviews.map(rev => `
-            <div style="margin-bottom:12px;padding:12px;background:#f9f9f9;border-radius:10px;">
-                <div style="font-size:14px;font-weight:600;margin-bottom:6px;">
-                    ${escapeHtml(rev.reviewerName)} · ${'⭐'.repeat(rev.rating)}
-                </div>
-                ${rev.comment ? `<div style="font-size:14px;color:var(--text-secondary);line-height:1.4;">${escapeHtml(rev.comment)}</div>` : ''}
-                <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
-                    ${new Date(rev.createdAt).toLocaleString('ru-RU')}
-                </div>
-            </div>
-        `).join('');
-    } catch (e) {
-        list.innerHTML = '<p class="muted">Не удалось загрузить отзывы</p>';
-    }
-}
-
-function closeAllReviewsModal() {
-    document.getElementById('allReviewsModal').classList.remove('active');
-}
 
 function updateNotifyBannerState() {
     const banner = document.getElementById('notifyBanner');
@@ -3222,40 +3344,7 @@ function updateNotifyBannerState() {
     banner.classList.remove('hidden');
 }
 
-let createMode = 'ride'; // 'ride' или 'subscribe'
 
-function switchCreateMode(mode) {
-    createMode = mode;
-
-    // Переключаем кнопки
-    document.getElementById('modeRide').classList.toggle('active', mode === 'ride');
-    document.getElementById('modeSubscribe').classList.toggle('active', mode === 'subscribe');
-
-    // Показываем/скрываем подсказку
-    document.getElementById('subscribeHint').classList.toggle('hidden', mode === 'ride');
-
-    // Показываем/скрываем поля заявки
-    document.getElementById('rideOnlyFields').classList.toggle('hidden', mode === 'subscribe');
-
-    document.getElementById('subscribeOnlyFields').classList.toggle('hidden', mode === 'ride');
-
-    // 🔥 ДОБАВИТЬ: Скрываем кнопку "Показать варианты дороги" в режиме подписки
-    const altBtn = document.getElementById('routeAlternativesBtn');
-    if (altBtn) altBtn.classList.toggle('hidden', mode === 'subscribe');
-
-    // Меняем текст кнопки
-    const submitBtn = document.getElementById('createSubmitBtn');
-    if (mode === 'ride') {
-        submitBtn.textContent = 'Создать и найти попутчиков';
-    } else {
-        submitBtn.textContent = 'Подписаться на маршрут';
-    }
-
-    // 🔥 Проверяем подписку при переключении в режим подписки
-    if (mode === 'subscribe') {
-        checkExistingSubscription();
-    }
-}
 
 async function handleCreateSubmit() {
     if (!selectedFrom || !selectedTo) {
@@ -3272,71 +3361,7 @@ async function handleCreateSubmit() {
     }
 }
 
-async function createSubscription() {
-    try {
-        const resp = await fetch('/api/subscriptions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Telegram-Init-Data': tgInitData
-            },
-            body: JSON.stringify({
-                fromLat: selectedFrom.latitude,
-                fromLon: selectedFrom.longitude,
-                toLat: selectedTo.latitude,
-                toLon: selectedTo.longitude,
-                radiusMeters: 5000 // фиксированный радиус 5 км
-            })
-        });
 
-        if (resp.ok) {
-            showMessage('🔔 Вы подписались на маршрут! Уведомим, когда кто-то поедет.', 'Готово');
-            loadSubscriptions(); // обновляем список подписок
-            switchScreen('mapScreen'); // переходим на карту
-        } else {
-            const errText = await resp.text();
-            if (errText.includes('уже подписаны')) {
-                showMessage('Вы уже подписаны на этот маршрут', 'Информация');
-            } else {
-                showMessage('Ошибка: ' + errText, 'Ошибка');
-            }
-        }
-    } catch (e) {
-        showMessage('Сервер недоступен, попробуйте позже', 'Ошибка');
-    }
-}
-
-async function checkExistingSubscription() {
-    if (createMode !== 'subscribe' || !selectedFrom || !selectedTo) return;
-
-    try {
-        const resp = await fetch('/api/subscriptions', {
-            headers: { 'X-Telegram-Init-Data': tgInitData }
-        });
-        if (!resp.ok) return;
-
-        const subs = await resp.json();
-        const exists = subs.some(s =>
-            Math.abs(s.fromLat - selectedFrom.latitude) < 0.001 &&
-            Math.abs(s.fromLon - selectedFrom.longitude) < 0.001 &&
-            Math.abs(s.toLat - selectedTo.latitude) < 0.001 &&
-            Math.abs(s.toLon - selectedTo.longitude) < 0.001
-        );
-
-        const submitBtn = document.getElementById('createSubmitBtn');
-        if (exists) {
-            submitBtn.textContent = '✅ Вы уже подписаны на этот маршрут';
-            submitBtn.disabled = true;
-            submitBtn.style.opacity = '0.6';
-        } else {
-            submitBtn.textContent = 'Подписаться на маршрут';
-            submitBtn.disabled = false;
-            submitBtn.style.opacity = '1';
-        }
-    } catch (e) {
-        console.warn('Не удалось проверить подписку:', e);
-    }
-}
 
 
 
@@ -3504,36 +3529,10 @@ function setMapRadius(km) {
     loadNearbyRides();
 }
 
-async function loadNearbyRides() {
-    if (!userLocation) return;
-
-    const radius = searchRadiusKm * 1000;
-    const resp = await fetch(`/api/rides/nearby?lat=${userLocation.lat}&lon=${userLocation.lon}&radius=${radius}`, {
-        headers: { 'X-Telegram-Init-Data': tgInitData }
-    });
-
-    if (!resp.ok) {
-        console.warn('Не удалось загрузить поездки рядом:', resp.status);
-        return;
-    }
-
-    const rides = await resp.json();
-    const list = document.getElementById('nearbyRidesList');
-
-    // 🔥 Проверка: если элемента нет, просто рисуем маркеры и выходим
-    if (!list) {
-        drawRideMarkers(rides);
-        return;
-    }
-
-    list.innerHTML = '';
-    // ... остальной код списка ...
-}
 
 // Отдельная функция для рисования маркеров
 function drawRideMarkers(rides) {
     // Удаляем ТОЛЬКО маркеры чужих заявок (из нашего массива)
-    // Маркер пользователя (userMarker) НЕ трогаем
     rideMarkers.forEach(m => {
         if (mainMap.hasLayer(m)) {
             mainMap.removeLayer(m);
@@ -3542,19 +3541,29 @@ function drawRideMarkers(rides) {
     rideMarkers = [];
 
     rides.forEach(ride => {
-        const color = ride.role === 'DRIVER' ? '#2196F3' : '#4CAF50';
+        const alreadyResponded = respondedRideIds.has(ride.id);
+
+        // 🔥 Цвет маркера: серый если уже откликнулись, иначе стандартный
+        const color = alreadyResponded ? '#9E9E9E' : (ride.role === 'DRIVER' ? '#2196F3' : '#4CAF50');
+
         const marker = L.circleMarker([ride.fromLat, ride.fromLon], {
-            radius: 10,
+            radius: alreadyResponded ? 8 : 10,
             color: color,
             fillColor: color,
-            fillOpacity: 0.7,
-            weight: 2
+            fillOpacity: alreadyResponded ? 0.4 : 0.7,
+            weight: alreadyResponded ? 1 : 2
         }).addTo(mainMap);
+
+        // 🔥 Кнопка в попапе: если уже откликнулись — неактивная
+        const btnHtml = alreadyResponded
+            ? `<button class="btn btn-sm btn-secondary" style="width:100%;opacity:0.7;" disabled>✓ Отклик отправлен</button>`
+            : `<button class="btn btn-sm" style="width:100%;" onclick="respondToRideFromMap(${ride.id})">Откликнуться</button>`;
 
         const popupContent = `
             <div style="min-width:200px;">
                 <div style="font-weight:600;margin-bottom:8px;">
                     ${ride.role === 'DRIVER' ? '🚗 Водитель' : '🚶 Пассажир'}
+                    ${alreadyResponded ? '<span style="color:#9E9E9E;font-size:12px;margin-left:6px;">(отклик отправлен)</span>' : ''}
                 </div>
                 <div style="font-size:13px;margin-bottom:4px;">
                     <strong>Маршрут:</strong><br>
@@ -3567,14 +3576,12 @@ function drawRideMarkers(rides) {
                 <div style="font-size:13px;margin-bottom:12px;">
                     <strong>Мест:</strong> ${ride.availableSeats || ride.passengerCount || '?'}
                 </div>
-                <button class="btn btn-sm" style="width:100%;" onclick="respondToRideFromMap(${ride.id})">
-                    Откликнуться
-                </button>
+                ${btnHtml}
             </div>
         `;
 
         marker.bindPopup(popupContent);
-        rideMarkers.push(marker); // запоминаем для следующей перерисовки
+        rideMarkers.push(marker);
     });
 }
 
@@ -3594,4 +3601,224 @@ function updateMapLegend() {
     } else {
         legend.innerHTML = `<span><span style="color:#2196F3;">●</span> Водители рядом (предлагают места)</span>`;
     }
+}
+
+
+function closeMapHelpModal() {
+    document.getElementById('mapHelpModal').classList.remove('active');
+}
+
+function closeProfileScreen() {
+    document.querySelector('.app-container').classList.remove('hide-header');
+    switchScreen('mapScreen');
+}
+
+// Модалка редактирования
+function openEditProfileModal() {
+    document.getElementById('editAboutMe').value = currentUser.aboutMe || '';
+    document.getElementById('editAboutMeCounter').textContent = (currentUser.aboutMe || '').length;
+
+    if (currentUser.role === 'DRIVER') {
+        document.getElementById('editVehicleFields').classList.remove('hidden');
+        // Загружаем данные авто
+        fetch('/api/vehicles/my', { headers: { 'X-Telegram-Init-Data': tgInitData } })
+            .then(r => r.ok ? r.json() : null)
+            .then(v => {
+                if (v) {
+                    document.getElementById('editVehicleBrand').value = v.brand || '';
+                    document.getElementById('editVehicleModel').value = v.model || '';
+                    document.getElementById('editVehicleColor').value = v.color || '';
+                    document.getElementById('editVehicleSeats').value = v.seats || '';
+                    document.getElementById('editVehiclePlateNumber').value = v.plateNumber || '';
+                }
+            });
+    } else {
+        document.getElementById('editVehicleFields').classList.add('hidden');
+    }
+
+    document.getElementById('editProfileModal').classList.add('active');
+}
+
+function closeEditProfileModal() {
+    document.getElementById('editProfileModal').classList.remove('active');
+}
+
+async function saveAboutMeFromEdit() {
+    const about = document.getElementById('editAboutMe').value.trim();
+    if (about.length > 140) {
+        showMessage('Максимум 140 символов', 'Ошибка');
+        return;
+    }
+    try {
+        const r = await fetch('/api/users/about', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
+            body: JSON.stringify({ aboutMe: about })
+        });
+        if (r.ok) {
+            currentUser.aboutMe = about;
+            document.getElementById('aboutMeDisplay').textContent = about || 'Не указано';
+            showMessage('Описание сохранено', 'Готово');
+            closeEditProfileModal();
+        } else {
+            showMessage(await r.text(), 'Ошибка');
+        }
+    } catch (e) {
+        showMessage('Сервер недоступен', 'Ошибка');
+    }
+}
+
+async function saveVehicleFromEdit() {
+    const brand = document.getElementById('editVehicleBrand').value.trim();
+    const model = document.getElementById('editVehicleModel').value.trim();
+    const color = document.getElementById('editVehicleColor').value.trim();
+    const seats = parseInt(document.getElementById('editVehicleSeats').value);
+    const plateNumber = document.getElementById('editVehiclePlateNumber').value.trim();
+
+    if (!brand || !model || !seats) {
+        showMessage('Заполните марку, модель и количество мест', 'Ошибка');
+        return;
+    }
+
+    const resp = await fetch('/api/vehicles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tgInitData },
+        body: JSON.stringify({ brand, model, color, seats, plateNumber })
+    });
+
+    if (resp.ok) {
+        showMessage('Автомобиль сохранён', 'Готово');
+        closeEditProfileModal();
+        openProfileScreen(); // Обновляем экран
+    } else {
+        showMessage(await resp.text(), 'Ошибка');
+    }
+}
+
+// Отзывы в стиле карточек
+async function loadRecentReviewsScreen(telegramId) {
+    const container = document.getElementById('recentReviewsScreen');
+    const showAllBtn = document.getElementById('showAllReviewsBtn2');
+    if (!container) return;
+
+    try {
+        const r = await fetch(`/api/reviews/user/${telegramId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!r.ok) {
+            container.innerHTML = '<div class="review-empty">Не удалось загрузить отзывы</div>';
+            return;
+        }
+        const reviews = await r.json();
+        if (reviews.length === 0) {
+            container.innerHTML = '<div class="review-empty">Отзывов пока нет</div>';
+            if (showAllBtn) showAllBtn.style.display = 'none';
+            return;
+        }
+
+        const recent = reviews.slice(0, 3);
+        container.innerHTML = recent.map(rev => renderReviewCard(rev)).join('');
+
+        if (reviews.length > 3 && showAllBtn) {
+            showAllBtn.style.display = 'block';
+            showAllBtn.onclick = () => showAllReviews(telegramId);
+        } else if (showAllBtn) {
+            showAllBtn.style.display = 'none';
+        }
+    } catch (e) {
+        container.innerHTML = '<div class="review-empty">Не удалось загрузить отзывы</div>';
+    }
+}
+
+function renderReviewCard(rev) {
+    const initial = (rev.authorName || rev.reviewerName || '?')[0].toUpperCase();
+    const stars = '⭐'.repeat(rev.rating || 0);
+    const date = rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('ru-RU') : '';
+    const comment = rev.comment ? `<div class="review-comment">${escapeHtml(rev.comment)}</div>` : '';
+
+    return `
+        <div class="review-card">
+            <div class="review-avatar">${escapeHtml(initial)}</div>
+            <div class="review-content">
+                <div class="review-header">
+                    <span class="review-author">${escapeHtml(rev.authorName || rev.reviewerName || 'Пользователь')}</span>
+                    <span class="review-rating">${stars}</span>
+                </div>
+                <div class="review-date">${date}</div>
+                ${comment}
+            </div>
+        </div>
+    `;
+}
+
+async function showAllReviews(telegramId) {
+    if (!telegramId) return;
+    document.getElementById('allReviewsModal').classList.add('active');
+    const list = document.getElementById('allReviewsList');
+    list.innerHTML = '<div class="review-empty">Загружаем…</div>';
+
+    try {
+        const r = await fetch(`/api/reviews/user/${telegramId}`, { headers: { 'X-Telegram-Init-Data': tgInitData } });
+        if (!r.ok) throw new Error();
+        const reviews = await r.json();
+        if (reviews.length === 0) {
+            list.innerHTML = '<div class="review-empty">Отзывов пока нет</div>';
+            return;
+        }
+        list.innerHTML = reviews.map(rev => renderReviewCard(rev)).join('');
+    } catch (e) {
+        list.innerHTML = '<div class="review-empty">Не удалось загрузить отзывы</div>';
+    }
+}
+
+function closeAllReviewsModal() {
+    document.getElementById('allReviewsModal').classList.remove('active');
+}
+
+// Счётчик символов в модалке редактирования
+document.getElementById('editAboutMe')?.addEventListener('input', function() {
+    document.getElementById('editAboutMeCounter').textContent = this.value.length;
+});
+
+function openMapHelpModal() {
+    const content = document.getElementById('mapHelpContent');
+    if (!content) return;
+    const isDriver = currentUser?.role === 'DRIVER';
+
+    content.innerHTML = `
+        <div style="font-size:14px;line-height:1.6;">
+            <p style="margin-bottom:12px;">
+                ${isDriver
+        ? '🚗 <strong>Вы водитель.</strong> Здесь видны пассажиры, которые ищут попутчиков.'
+        : '🚶 <strong>Вы пассажир.</strong> Здесь видны водители, которые предлагают места.'
+    }
+            </p>
+            <div style="margin-bottom:12px;">
+                <div style="font-weight:600;margin-bottom:6px;">🎯 Маркеры:</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:#2196F3;"></span>
+                    <span>Синие — ${isDriver ? 'пассажиры' : 'водители'}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:#4CAF50;"></span>
+                    <span>Зелёные — ${isDriver ? 'водители' : 'пассажиры'}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="width:12px;height:12px;border-radius:50%;background:#9E9E9E;"></span>
+                    <span>Серые — вы уже откликнулись</span>
+                </div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <div style="font-weight:600;margin-bottom:6px;">👆 Что делать:</div>
+                <ul style="margin:0;padding-left:20px;">
+                    <li>Нажмите на маркер — увидите детали</li>
+                    <li>Нажмите «Откликнуться», чтобы связаться</li>
+                    <li>Ползунок меняет радиус поиска</li>
+                </ul>
+            </div>
+            <div>
+                <div style="font-weight:600;margin-bottom:6px;">💡 Если рядом никого нет:</div>
+                <p style="margin:0;">Создайте заявку или подпишитесь на маршрут — уведомим, когда появится попутчик.</p>
+            </div>
+        </div>
+    `;
+    document.getElementById('mapHelpModal')?.classList.add('active');
 }

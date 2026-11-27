@@ -45,6 +45,7 @@ public class ReviewController {
         );
     }
 
+    /*
     @GetMapping("/user/{telegramId}")
     public List<Map<String, Object>> getUserReviews(@PathVariable Long telegramId) {
         User user = userRepository.findByTelegramId(telegramId)
@@ -65,8 +66,13 @@ public class ReviewController {
                     );
                 })
                 .collect(Collectors.toList());
+    } */
+    @GetMapping("/user/{telegramId}")
+    public List<Map<String, Object>> getUserReviews(@PathVariable Long telegramId,
+                                                    @RequestHeader(value = "X-Telegram-Init-Data", required = false) String initData) {
+        authService.authenticate(initData);
+        return reviewService.getReviewsAbout(telegramId);
     }
-
     @GetMapping("/counterparty/{rideRequestId}")
     public Long getCounterparty(@PathVariable Long rideRequestId,
                                 @RequestHeader("X-Telegram-Init-Data") String initData) {

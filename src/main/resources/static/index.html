@@ -26,6 +26,7 @@
             --radius: 16px;
             --nav-height: 64px;
             --orange: #ff6f00;
+            --chat-h: 100vh; /* фиктивное значение для IDEA */
 
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -215,16 +216,43 @@
         .test-panel button { border: none; border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #fff; }
         .test-panel .tp-active { outline: 2px solid #ffc107; }
 
-        .profile-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-        .profile-avatar {
-            width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0;
-            background: linear-gradient(135deg, var(--primary), #6ab7e8);
-            color: #fff; font-weight: 700; font-size: 26px;
-            display: flex; align-items: center; justify-content: center;
+        .profile-hero {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 16px 14px;
+            margin-bottom: 4px;
         }
-        .profile-hero-name { font-size: 19px; font-weight: 700; }
-        .profile-hero-sub { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
-        .profile-stats { display: flex; gap: 8px; margin-bottom: 14px; }
+        .profile-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, var(--primary), #6ab7e8);
+            color: #fff;
+            font-weight: 700;
+            font-size: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .profile-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .profile-hero-name {
+            font-size: 19px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .profile-hero-sub {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+
         .profile-stat {
             flex: 1; background: #fafbfc; border: 1px solid var(--border);
             border-radius: 12px; padding: 10px 6px; text-align: center;
@@ -234,9 +262,7 @@
         .profile-section-title { font-size: 15px; font-weight: 600; margin: 4px 0 10px; }
         #vehicleFields input { margin-bottom: 0; }
         /* Стили для полноэкранного чата */
-        .app-container.chat-open {
-            padding-bottom: 0 !important;
-        }
+
         .app-container.chat-open .bottom-nav {
             display: none !important;
         }
@@ -248,9 +274,7 @@
         .app-container.chat-open {
             padding-bottom: 0 !important;
         }
-        .app-container.chat-open .bottom-nav {
-            display: none !important;
-        }
+
         #chatWindow {
             display: none;
         }
@@ -283,8 +307,7 @@
         .chat-input-row .btn { width:auto; padding:12px 20px; margin:0; border-radius:50%; font-size:18px; }
 
         /* отменяем старые фикс-правила, если они остались */
-        .app-container.chat-open { padding-bottom: 0 !important; }
-        .app-container.chat-open .bottom-nav { display: none !important; }
+
 
         .notify-banner {
             display: flex; align-items: center; gap: 10px;
@@ -430,6 +453,309 @@
             border: none;
             box-shadow: 0 2px 6px rgba(0,0,0,0.2);
         }
+
+        .subscreen-header {
+            display:flex; align-items:center; gap:12px;
+            padding:12px 14px; margin-bottom:8px;
+            position:sticky; top:0; z-index:10;
+            background:var(--bg,#fff);
+        }
+        .back-btn {
+            width:36px;height:36px;border:none;border-radius:50%;
+            background:#f0f2f5;color:var(--text-primary);font-size:18px;cursor:pointer;flex-shrink:0;
+        }
+        .subscreen-title { font-size:17px;font-weight:700; }
+        .responses-ride-route { font-weight:600;font-size:14px;margin:6px 0;line-height:1.4; }
+        .responses-ride-meta { font-size:13px;color:var(--text-secondary);line-height:1.6; }
+        .peer-about {
+            margin-top:12px;padding:10px 12px;background:#f8f9fa;border-radius:10px;
+            font-size:13px;color:var(--text-secondary);font-style:italic;line-height:1.4;
+        }
+        .peer-about.empty { display:none; }
+        .response-card {
+            padding:12px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;
+            cursor:pointer;transition:box-shadow .15s;
+        }
+        .response-card:hover { box-shadow:0 2px 10px rgba(0,0,0,.07); }
+        .response-head { display:flex;align-items:center;gap:10px;margin-bottom:6px; }
+        .response-avatar {
+            width:38px;height:38px;border-radius:50%;background:var(--primary);color:#fff;
+            display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;
+        }
+        .response-name { font-weight:600;font-size:14px;flex:1;min-width:0; }
+        .response-meta { font-size:12px;color:var(--text-secondary);margin-bottom:6px; }
+        .response-actions { display:flex;gap:8px;flex-wrap:wrap;margin-top:8px; }
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+        .profile-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .profile-info h2 {
+            font-size: 19px;
+            font-weight: 700;
+            margin: 0;
+        }
+        .profile-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, var(--primary), #6ab7e8);
+            color: #fff;
+            font-weight: 700;
+            font-size: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 50%;
+            background: var(--primary-soft);
+            color: var(--primary);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            position: relative;
+        }
+
+        .map-help-btn {
+            transition: all 0.2s;
+        }
+        .map-help-btn:hover {
+            background: #f5f5f5;
+            transform: scale(1.1);
+        }
+        .map-help-btn:active {
+            transform: scale(0.95);
+        }
+        /* Секции профиля */
+        .profile-section {
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .profile-section:last-child {
+            border-bottom: none;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        /* Карточки отзывов */
+        .review-card {
+            display: flex;
+            gap: 12px;
+            padding: 12px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 10px;
+        }
+        .review-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), #6ab7e8);
+            color: #fff;
+            font-weight: 700;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .review-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .review-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .review-author {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .review-rating {
+            color: #ff9800;
+            font-size: 13px;
+        }
+        .review-date {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .review-comment {
+            font-size: 13px;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+        .review-empty {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        /* Шапка профиля — горизонтальное расположение */
+        #profileScreen .profile-hero {
+            flex-direction: row !important;
+            text-align: left !important;
+            padding: 16px !important;
+            gap: 16px !important;
+        }
+
+        #profileScreen .profile-avatar {
+            width: 72px !important;
+            height: 72px !important;
+            font-size: 28px !important;
+            margin-bottom: 0 !important;
+            flex-shrink: 0;
+        }
+
+        #profileScreen .profile-hero-name {
+            font-size: 20px !important;
+            margin: 0 !important;
+        }
+
+        #profileScreen .profile-hero-sub {
+            font-size: 13px !important;
+            margin-top: 4px !important;
+        }
+
+        /* Уменьшаем отступы между секциями */
+        #profileScreen .profile-section {
+            padding: 12px 0 !important;
+        }
+
+        #profileScreen .section-title {
+            font-size: 14px !important;
+            margin-bottom: 6px !important;
+        }
+
+        /* Карточки статистики — компактные */
+        #profileScreen .profile-stats {
+            margin: 12px 14px !important;
+            gap: 8px !important;
+        }
+
+        #profileScreen .stat-card {
+            padding: 12px 8px !important;
+        }
+
+        #profileScreen .stat-value {
+            font-size: 18px !important;
+        }
+
+        #profileScreen .stat-label {
+            font-size: 11px !important;
+        }
+
+        /* Фикс выравнивания профиля */
+        #profileScreen {
+            padding: 0 !important;
+        }
+
+        #profileScreen .profile-hero {
+            padding: 20px 16px !important;
+            text-align: center;
+        }
+
+        #profileScreen .profile-stats {
+            padding: 0 16px !important;
+            margin: 16px 0 !important;
+        }
+
+        #profileScreen .profile-section {
+            padding: 16px !important;
+            margin: 0 !important;
+            border-bottom: 1px solid var(--border);
+        }
+
+        #profileScreen .profile-section:last-child {
+            border-bottom: none;
+        }
+
+        #profileScreen .section-title {
+            margin-bottom: 8px;
+        }
+
+        /* Фикс для телефона */
+        #profileScreen #phoneForm {
+            width: 100%;
+        }
+
+        #profileScreen #phoneForm select,
+        #profileScreen #phoneForm input {
+            width: 100%;
+            max-width: 100%;
+        }
+
+        /* Фикс для отзывов */
+        #profileScreen .review-card {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .profile-section {
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .profile-section:last-child { border-bottom: none; }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+        .profile-header .profile-info h2 {
+            font-size: 19px;
+            font-weight: 700;
+            margin: 0;
+        }
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 50%;
+            background: var(--primary-soft);
+            color: var(--primary);
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .modal-content { position: relative; }
+
+        /* Скрываем главный header на экранах, у которых своя шапка */
+        .app-container.hide-header .header { display: none; }
     </style>
 </head>
 <body>
@@ -438,7 +764,7 @@
         <div class="greeting" id="greetingText">Привет!</div>
         <div style="display:flex; gap:10px; align-items:center;">
             <div class="role-badge hidden" id="roleBadge">🚶 Пассажир</div>
-            <button class="profile-btn" onclick="openProfileModal()">👤</button>
+            <button class="profile-btn" onclick="openProfileScreen()">👤</button>
         </div>
     </div>
 
@@ -461,14 +787,12 @@
     </div>
 
     <div id="mapScreen" class="screen active">
-        <div class="map-hint" style="background:#e3f2fd;border:1px solid #90caf9;border-radius:12px;padding:12px;margin:12px;font-size:13px;color:#1565c0;line-height:1.5;">
-            🗺️ <strong>Как пользоваться картой</strong><br>
-            • Здесь видны попутчики рядом с вами (в радиусе <span id="mapRadiusHint">10</span> км)<br>
-            • 🔵 Синие — водители, 🟢 Зелёные — пассажиры<br>
-            • Нажмите на маркер, чтобы увидеть детали и откликнуться<br>
-            • Если рядом никого нет — создайте заявку или подпишитесь на маршрут
-        </div>
+
+        <div style="position:relative;margin:12px 12px 0 12px;">
         <div id="mainMap"></div>
+            <button class="map-help-btn" onclick="openMapHelpModal()"
+                    style="position:absolute;top:10px;right:10px;z-index:1000;width:36px;height:36px;border-radius:50%;border:none;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;">ℹ️</button>
+        </div>
         <!-- Ползунок радиуса -->
         <div class="card" style="margin:12px;">
             <h3>Радиус поиска</h3>
@@ -658,15 +982,27 @@
             <button class="btn btn-secondary hidden" id="cancelEditBtn" onclick="resetCreateForm()" style="margin-top:8px;">Отменить редактирование</button>
         </div>
 
-        <div id="myRide" class="card hidden">
-            <h3>Ваша активная заявка</h3>
-            <p id="myRideInfo" style="margin-bottom: 12px;"></p>
+        <!-- Компактный баннер активной заявки -->
+        <div id="activeRideBanner" class="card hidden" style="padding:12px 14px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="font-size:20px;">📋</div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;font-size:14px;" id="activeRideTitle">Активная заявка</div>
+                    <div style="font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="activeRideRoute">—</div>
+                </div>
+                <button class="btn btn-sm" style="margin:0;flex-shrink:0;" onclick="openResponsesForRide(currentRideId)">Отклики</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+                <button class="btn btn-sm btn-secondary" style="margin:0;flex:1;" onclick="editActiveRide()">✏️ Изменить</button>
+                <button class="btn btn-sm btn-secondary" style="margin:0;flex:1;color:var(--danger);" onclick="cancelMyRide()">Отменить</button>
+            </div>
         </div>
 
+        <!-- Найденные попутчики — скрыт, пока есть результаты -->
         <div id="matchesBlock" class="card hidden">
-            <h3 style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                Найденные попутчики
-                <button class="btn btn-sm btn-secondary" style="margin:0;" onclick="searchMatchesForActiveRide()">🔄 Обновить</button>
+            <h3 style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:15px;">
+                🔥 Найдены попутчики
+                <button class="btn btn-sm btn-secondary" style="margin:0;" onclick="searchMatchesForActiveRide()">🔄</button>
             </h3>
             <div id="matchesList"></div>
         </div>
@@ -679,18 +1015,119 @@
             <button class="btn btn-sm" id="tabHistory" onclick="switchRidesTab('history')">📜 История</button>
         </div>
 
-        <!-- Подтабы внутри "Сейчас" -->
-        <div id="nowSubTabs" class="sub-tabs">
-            <button class="sub-tab active" data-filter="all" onclick="filterNow('all')">Все</button>
-            <button class="sub-tab" data-filter="rides" onclick="filterNow('rides')">Мои заявки</button>
-            <button class="sub-tab" data-filter="responses" onclick="filterNow('responses')">Мои отклики</button>
-        </div>
 
         <div id="myRidesList" class="ride-list"></div>
         <div id="myResponsesList" class="ride-list hidden"></div>
-        <div id="responsesBlock" class="card hidden">
-            <h3>Отклики на заявку</h3>
+    </div>
+
+    <div id="responsesScreen" class="screen">
+        <div class="subscreen-header">
+            <button class="back-btn" onclick="closeResponsesScreen()">←</button>
+            <div class="subscreen-title">Отклики на заявку</div>
+        </div>
+
+        <!-- Карточка заявки -->
+        <div class="card" id="responsesRideCard">
+            <p class="muted">Загрузка…</p>
+        </div>
+
+        <!-- Список откликов -->
+        <div class="card">
+            <h3 style="display:flex;justify-content:space-between;align-items:center;">
+                Отклики
+                <button class="btn btn-sm btn-secondary" style="margin:0;" onclick="reloadResponses()">🔄</button>
+            </h3>
             <div id="responsesList"></div>
+        </div>
+    </div>
+
+    <!-- ===== Экран профиля ===== -->
+    <div id="profileScreen" class="screen">
+        <div class="subscreen-header">
+            <button class="back-btn" onclick="closeProfileScreen()">←</button>
+            <div class="subscreen-title" style="flex:1;">Профиль</div>
+            <button class="btn btn-sm btn-secondary" style="margin:0;" onclick="openEditProfileModal()">✏️ Редактировать</button>
+        </div>
+
+        <!-- Шапка профиля -->
+        <div class="profile-hero">
+            <div class="profile-avatar" id="profileAvatar">?</div>
+            <div class="profile-info">
+                <div class="profile-hero-name" id="profileName">Пользователь</div>
+                <div class="profile-hero-sub" id="profileUsername"></div>
+            </div>
+        </div>
+
+        <!-- Статистика -->
+        <div class="profile-stats" style="margin:0 14px 16px;">
+            <div class="stat-card">
+                <div class="stat-value">⭐ <span id="profileStars">—</span></div>
+                <div class="stat-label">Рейтинг</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="profileTripCount">0</div>
+                <div class="stat-label">Поездок</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="profileRole">—</div>
+                <div class="stat-label">Роль</div>
+            </div>
+        </div>
+
+        <!-- Секции профиля -->
+        <div style="padding:0 14px;">
+            <!-- Уведомления -->
+            <div class="profile-section">
+                <div class="section-title">🔔 Уведомления</div>
+                <div id="notifyStatus" style="font-size:14px;color:var(--text-secondary);">Загружаем…</div>
+            </div>
+
+            <!-- Телефон -->
+            <div class="profile-section">
+                <div class="section-title">📞 Контактный номер</div>
+                <div id="phoneStatus" style="font-size:14px;color:var(--text-secondary);">Загружаем…</div>
+                <div id="phoneForm" class="hidden" style="margin-top:10px;">
+                    <div style="display:flex;gap:8px;margin-bottom:8px;">
+                        <select id="phoneCountryCode" style="width:110px;padding:10px 8px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;background:#fafbfc;">
+                            <option value="+375">🇧🇾 +375</option>
+                            <option value="+7" data-country="RU">🇷🇺 +7</option>
+                            <option value="+7" data-country="KZ">🇰🇿 +7</option>
+                            <option value="+998">🇺🇿 +998</option>
+                            <option value="+996">🇰🇬 +996</option>
+                            <option value="+992">🇹🇯 +992</option>
+                            <option value="+374">🇦🇲 +374</option>
+                            <option value="+994">🇦🇿 +994</option>
+                        </select>
+                        <input type="tel" id="phoneInput" placeholder="29 123 45 67" style="flex:1;">
+                    </div>
+                    <button class="btn btn-sm btn-secondary" onclick="requestPhoneCode()" style="margin:0;">Получить код в боте</button>
+                    <div id="codeRow" class="hidden" style="margin-top:10px;">
+                        <input type="text" id="phoneCodeInput" inputmode="numeric" maxlength="6" placeholder="Код из бота" style="margin-bottom:8px;">
+                        <button class="btn btn-sm" onclick="verifyPhoneCode()" style="margin:0;">Подтвердить</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- О себе -->
+            <div class="profile-section">
+                <div class="section-title">✍️ О себе</div>
+                <div id="aboutMeDisplay" style="font-size:14px;color:var(--text-secondary);font-style:italic;line-height:1.5;"></div>
+            </div>
+
+            <!-- Автомобиль -->
+            <div class="profile-section hidden" id="vehicleSection">
+                <div class="section-title">🚗 Автомобиль</div>
+                <div id="vehicleDisplay" style="font-size:14px;color:var(--text-secondary);"></div>
+            </div>
+
+            <!-- Отзывы -->
+            <div class="profile-section">
+                <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+                    <span>💬 Отзывы</span>
+                    <button class="btn btn-sm btn-secondary" style="margin:0;" onclick="showAllReviews(currentUser?.telegramId)" id="showAllReviewsBtn2">Все →</button>
+                </div>
+                <div id="recentReviewsScreen"></div>
+            </div>
         </div>
     </div>
 
@@ -789,121 +1226,61 @@
     </div>
 </div>
 
-<div id="profileModal" class="modal">
-    <div class="modal-content">
-        <button class="modal-close" onclick="closeProfileModal()">×</button>
-
-        <!-- Шапка профиля -->
-        <div class="profile-header">
-            <div class="profile-avatar" id="profileAvatar">?</div>
-            <div class="profile-info">
-                <h2 id="profileName">Пользователь</h2>
-                <div id="profileUsername" style="color:var(--text-secondary);font-size:14px;"></div>
-            </div>
-        </div>
 
 
-        <!-- Статистика -->
-        <div class="profile-stats">
-            <div class="stat-card">
-                <div class="stat-value">⭐ <span id="profileStars">—</span></div>
-                <div class="stat-label">Рейтинг</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="profileTripCount">0</div>
-                <div class="stat-label">Поездок</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="profileRole">—</div>
-                <div class="stat-label">Роль</div>
-            </div>
-        </div>
-
-        <!-- Уведомления -->
-        <div class="profile-section-title">🔔 Уведомления</div>
-        <div id="notifyStatus" style="font-size:14px; color:var(--text-secondary); margin-bottom:12px;">Загружаем…</div>
-
-        <!-- Телефон -->
-        <div class="profile-section-title">📞 Контактный номер</div>
-        <div id="phoneStatus" style="font-size:14px; color:var(--text-secondary); margin-bottom:8px;">Загружаем…</div>
-        <div id="phoneForm" class="hidden">
-            <div style="display:flex; gap:8px; margin-bottom:8px;">
-                <select id="phoneCountryCode" style="width:110px; padding:12px 8px; border:1.5px solid var(--border); border-radius:12px; font-size:15px; background:#fafbfc;">
-                    <option value="+375">🇧🇾 +375</option>
-                    <option value="+7" data-country="RU">🇷🇺 +7 (РФ)</option>
-                    <option value="+7" data-country="KZ">🇰🇿 +7 (КЗ)</option>
-                    <option value="+998">🇺🇿 +998</option>
-                    <option value="+996">🇰🇬 +996</option>
-                    <option value="+992">🇹🇯 +992</option>
-                    <option value="+374">🇦🇲 +374</option>
-                    <option value="+994">🇦🇿 +994</option>
-                </select>
-                <input type="tel" id="phoneInput" placeholder="29 123 45 67" style="flex:1;">
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="requestPhoneCode()">Получить код в боте</button>
-            <div id="codeRow" class="hidden" style="margin-top:10px;">
-                <input type="text" id="phoneCodeInput" inputmode="numeric" maxlength="6" placeholder="Код из сообщения бота">
-                <button class="btn btn-sm" onclick="verifyPhoneCode()" style="margin-top:8px;">Подтвердить</button>
-            </div>
-            <p style="font-size:11px;color:var(--text-secondary);margin-top:8px;line-height:1.4;">
-                Этот номер увидит попутчик после подтверждения брони — чтобы связаться с вами.
-                Указывайте тот, по которому вас реально можно найти.
-            </p>
-        </div>
+<!-- ===== Модалка редактирования профиля ===== -->
+<div id="editProfileModal" class="modal">
+    <div class="modal-content" style="max-height:85vh;overflow-y:auto;">
+        <button class="modal-close" onclick="closeEditProfileModal()">×</button>
+        <h3 style="margin-bottom:16px;">Редактировать профиль</h3>
 
         <!-- О себе -->
-        <div class="profile-section-title" style="margin-top:16px;">✍️ О себе</div>
         <div class="field">
-            <textarea id="aboutMe" rows="3" maxlength="140" placeholder="Коротко о себе: люблю музыку, не курю, могу помочь с багажом..." style="resize:none;"></textarea>
+            <label>✍️ О себе</label>
+            <textarea id="editAboutMe" rows="3" maxlength="140" placeholder="Коротко о себе..." style="resize:none;"></textarea>
             <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
-                <span id="aboutMeCounter">0</span>/140 · видят попутчики в отклике
+                <span id="editAboutMeCounter">0</span>/140
             </div>
         </div>
-        <button class="btn btn-secondary" onclick="saveAboutMe()" style="margin-top:8px;">Сохранить</button>
+        <button class="btn btn-sm" onclick="saveAboutMeFromEdit()" style="margin-bottom:16px;">Сохранить "О себе"</button>
 
         <!-- Автомобиль (только для водителей) -->
-        <div id="vehicleFields" class="hidden">
-            <div class="profile-section-title" style="margin-top:16px;">🚗 Автомобиль</div>
+        <div id="editVehicleFields" class="hidden">
+            <h4 style="margin-bottom:12px;">🚗 Автомобиль</h4>
             <div class="field">
                 <label>Марка</label>
-                <input type="text" id="vehicleBrand" placeholder="Renault">
+                <input type="text" id="editVehicleBrand" placeholder="Renault">
             </div>
             <div class="field">
                 <label>Модель</label>
-                <input type="text" id="vehicleModel" placeholder="Scenik">
+                <input type="text" id="editVehicleModel" placeholder="Scenik">
             </div>
             <div class="field">
                 <label>Цвет</label>
-                <input type="text" id="vehicleColor" placeholder="Серый">
+                <input type="text" id="editVehicleColor" placeholder="Серый">
             </div>
             <div class="field">
                 <label>Количество мест</label>
-                <input type="number" id="vehicleSeats" placeholder="4" min="1" max="8">
+                <input type="number" id="editVehicleSeats" placeholder="4" min="1" max="8">
             </div>
             <div class="field">
                 <label>Гос. номер (необязательно)</label>
-                <input type="text" id="vehiclePlateNumber" placeholder="AB1234CD">
+                <input type="text" id="editVehiclePlateNumber" placeholder="AB1234CD">
             </div>
-            <button class="btn" onclick="saveVehicle()" style="margin-top:10px;">Сохранить авто</button>
+            <button class="btn" onclick="saveVehicleFromEdit()">Сохранить авто</button>
         </div>
-
-        <!-- Последние отзывы -->
-        <div class="profile-section-title" style="margin-top:16px;">💬 Последние отзывы</div>
-        <div id="recentReviews" style="margin-bottom:12px;">
-            <p class="muted" style="font-size:13px;">Загружаем…</p>
-        </div>
-        <button class="btn btn-secondary btn-sm" onclick="showAllReviews()" id="showAllReviewsBtn" style="display:none;">Показать все отзывы</button>
     </div>
 </div>
 
-<!-- Модалка всех отзывов -->
+<!-- ===== Модалка всех отзывов ===== -->
 <div id="allReviewsModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-height:85vh;overflow-y:auto;">
         <button class="modal-close" onclick="closeAllReviewsModal()">×</button>
-        <h2>Все отзывы</h2>
+        <h3 style="margin-bottom:16px;">Все отзывы</h3>
         <div id="allReviewsList"></div>
     </div>
 </div>
+
 
 
 <div id="supportModal" class="modal">
@@ -929,6 +1306,42 @@
     </div>
 </div>
 
+
+
+<!-- ===== Экран «Отклики на заявку» ===== -->
+
+
+<!-- ===== Модалка профиля откликнувшегося ===== -->
+<div id="peerProfileModal" class="modal">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closePeerProfile()">×</button>
+        <div class="profile-header">
+            <div class="profile-avatar" id="peerAvatar">?</div>
+            <div class="profile-info">
+                <h2 id="peerName">—</h2>
+                <div id="peerUsername" style="color:var(--text-secondary);font-size:14px;"></div>
+            </div>
+        </div>
+        <div class="profile-stats">
+            <div class="stat-card"><div class="stat-value">⭐ <span id="peerRating">—</span></div><div class="stat-label">Рейтинг</div></div>
+            <div class="stat-card"><div class="stat-value" id="peerTrips">0</div><div class="stat-label">Поездок</div></div>
+            <div class="stat-card"><div class="stat-value" id="peerSeats">—</div><div class="stat-label">Мест</div></div>
+        </div>
+        <div id="peerAbout" class="peer-about"></div>
+        <div class="profile-section-title" style="margin-top:12px;">💬 Отзывы</div>
+        <div id="peerReviews"><p class="muted" style="font-size:13px;">Загружаем…</p></div>
+    </div>
+</div>
+
+
+<!-- Модалка "Как пользоваться картой" -->
+<div id="mapHelpModal" class="modal">
+    <div class="modal-content" style="max-width:350px;">
+        <button class="modal-close" onclick="closeMapHelpModal()">×</button>
+        <h3 style="margin-bottom:12px;">🗺️ Как пользоваться картой</h3>
+        <div id="mapHelpContent"></div>
+    </div>
+</div>
 <script src="ride_mate_app.js"></script>
 </body>
 </html>

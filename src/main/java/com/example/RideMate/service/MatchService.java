@@ -122,6 +122,11 @@ public class MatchService {
             throw new RuntimeException("Бронь уже обработана");
         }
 
+        // 🔥 ПРОВЕРКА: seats должен быть > 0
+        if (match.getSeats() == null || match.getSeats() <= 0) {
+            throw new RuntimeException("Некорректное количество мест в брони: " + match.getSeats());
+        }
+
         if (rideRequest.getRole() == Role.DRIVER) {
             int updated = rideRequestRepository.decrementSeats(rideRequest.getId(), match.getSeats());
             if (updated == 0) {
@@ -131,6 +136,16 @@ public class MatchService {
 
         match.setStatus(MatchStatus.CONFIRMING);
         match.setExpiresAt(LocalDateTime.now().plusHours(CONFIRM_DEADLINE_HOURS));
+
+        // 🔥 ЛОГ перед сохранением — чтобы увидеть, что именно падает
+        System.out.println("=== ACCEPT DEBUG ===");
+        System.out.println("Match ID: " + match.getId());
+        System.out.println("Status: " + match.getStatus());
+        System.out.println("Seats: " + match.getSeats());
+        System.out.println("RideRequest ID: " + rideRequest.getId());
+        System.out.println("Responder: " + match.getResponder().getTelegramId());
+        System.out.println("==================");
+
         matchRepository.save(match);
 
         rideRequest.setStatus(RideStatus.MATCHED);
